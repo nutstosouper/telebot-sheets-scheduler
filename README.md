@@ -1,73 +1,108 @@
-# Welcome to your Lovable project
 
-## Project info
+# TeleBot Scheduler - Telegram Bot with Google Sheets Integration
 
-**URL**: https://lovable.dev/projects/24061430-7d34-49c2-b288-c51ea9b77040
+A complete backend solution for a Telegram bot that manages services, appointments, and users with different roles (Clients, Admins, CEO), all stored in Google Sheets.
 
-## How can I edit this code?
+## Features
 
-There are several ways of editing your application.
+### Role-Based Access
+- **Clients**: Book services, view and cancel appointments
+- **Administrators**: Manage services and appointments, view statistics
+- **CEO**: Manage administrators, view comprehensive statistics
 
-**Use Lovable**
+### Google Sheets Integration
+- Store all data in Google Sheets - no traditional database required
+- Services, client data, appointments, and history all managed in separate sheets
+- Easy to view and manage data manually if needed
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/24061430-7d34-49c2-b288-c51ea9b77040) and start prompting.
+### Booking System
+- Service listing and selection
+- Date and time scheduling
+- Confirmation flow
+- Appointment management
 
-Changes made via Lovable will be committed automatically to this repo.
+### Admin Capabilities
+- Add/remove services
+- Manage client appointments
+- View booking statistics
 
-**Use your preferred IDE**
+### Extensible Architecture
+- Clean separation of concerns for easy maintenance
+- Ready for future integration with AI tools and analytics
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## Setup Guide
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### 1. Create a Telegram Bot
+- Open Telegram and search for [@BotFather](https://t.me/BotFather)
+- Send `/newbot` command
+- Follow the instructions to set a name and username
+- Copy the provided bot token
 
-Follow these steps:
+### 2. Set Up Google Sheets
+1. Create a new Google Sheet with the following worksheets:
+   - `Services` (columns: `id`, `name`, `description`, `price`)
+   - `Clients` (columns: `user_id`, `username`, `full_name`, `role`)
+   - `Appointments` (columns: `id`, `user_id`, `service_id`, `date`, `time`, `status`)
+   - `History` (columns: `timestamp`, `user_id`, `service_id`, `date`, `time`, `amount`)
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+2. Set up Google Sheets API:
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project
+   - Enable the Google Sheets API
+   - Create a service account and download the JSON credentials
+   - Share your Google Sheet with the service account email (with Editor permissions)
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+### 3. Install Required Packages
+```bash
+pip install aiogram gspread oauth2client python-dotenv
 ```
 
-**Edit a file directly in GitHub**
+### 4. Configure Environment Variables
+Create a `.env` file with:
+```
+BOT_TOKEN=your_telegram_bot_token_here
+GOOGLE_CREDENTIALS_FILE=path/to/your/credentials.json
+SPREADSHEET_ID=your_spreadsheet_id_here
+```
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### 5. Run the Bot
+```bash
+python main.py
+```
 
-**Use GitHub Codespaces**
+## Project Structure
+```
+project_folder/
+├── main.py               # Main entry point
+├── .env                  # Environment variables
+├── credentials.json      # Google API credentials
+├── database/
+│   └── sheets_manager.py # Google Sheets integration
+├── handlers/
+│   ├── client_handlers.py # Client command handlers
+│   ├── admin_handlers.py  # Admin command handlers
+│   └── ceo_handlers.py    # CEO command handlers
+├── keyboards/
+│   ├── client_keyboards.py # Client-specific keyboards
+│   └── admin_keyboards.py  # Admin-specific keyboards
+└── middlewares/
+    └── role_middleware.py  # Role-based access control
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Future Extensions
 
-## What technologies are used for this project?
+### AI Integration
+- **Content Generation**: Use AI to generate personalized messages to clients
+- **Smart Scheduling**: Implement AI-based scheduling recommendations
+- **Chatbot Capabilities**: Enhance user interactions with natural language processing
 
-This project is built with:
+### Analytics
+- Implement more comprehensive reporting
+- Add visualizations for business insights
+- Track customer engagement and retention
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## Contributing
+Feel free to fork this project and submit pull requests or open issues for features and bug fixes.
 
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/24061430-7d34-49c2-b288-c51ea9b77040) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+## License
+MIT License
