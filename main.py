@@ -19,7 +19,7 @@ from utils.db_api import google_sheets
 
 # Initialize bot and dispatcher
 bot = Bot(token=os.getenv('BOT_TOKEN'))
-dp = Dispatcher()  # В aiogram 3.x инициализация диспетчера изменилась
+dp = Dispatcher()
 
 # Setup middlewares
 dp.message.middleware(RoleMiddleware())
@@ -43,18 +43,32 @@ async def register_all_handlers():
 
 # Main function to start the bot
 async def main():
-    # Initialize Google Sheets
-    await google_sheets.setup()
-    
-    # Register all handlers
-    await register_all_handlers()
-    
-    # Set bot commands
-    await set_commands()
-    
-    # Start polling
-    logging.info("Starting bot")
-    await dp.start_polling(bot)
+    try:
+        # Initialize Google Sheets
+        logging.info("Initializing Google Sheets connection...")
+        await google_sheets.setup()
+        logging.info("Google Sheets connection established successfully")
+        
+        # Register all handlers
+        await register_all_handlers()
+        
+        # Set bot commands
+        await set_commands()
+        
+        # Start polling
+        logging.info("Starting bot")
+        await dp.start_polling(bot)
+    except Exception as e:
+        logging.error(f"Error starting bot: {str(e)}")
+        if "MalformedError" in str(e):
+            logging.error("Your Google credentials file appears to be invalid!")
+            logging.error("Please run 'python utils/verify_credentials.py' to check your credentials file")
+        elif "FileNotFoundError" in str(e):
+            logging.error("Make sure your .env file contains the correct path to your credentials file")
+        elif "SPREADSHEET_ID" in str(e):
+            logging.error("Make sure your .env file contains your Google Spreadsheet ID")
+        else:
+            logging.error("If the error persists, check your internet connection and Google API access")
 
 if __name__ == '__main__':
     asyncio.run(main())

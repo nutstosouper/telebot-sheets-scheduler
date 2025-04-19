@@ -11,26 +11,33 @@ load_dotenv()
 # Define the scope
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
-# Configure Google Sheets client
-client = None
-sheet = None
-
 # Spreadsheet details
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
 CREDENTIALS_FILE = os.getenv('GOOGLE_CREDENTIALS_FILE')
+
+# Initialize Google Sheets client
+client = None
+sheet = None
 
 async def setup():
     """Setup Google Sheets connection"""
     global client, sheet
     
+    # If already set up, just return the sheet
+    if sheet is not None:
+        return sheet
+    
     # Validate environment variables
     if not SPREADSHEET_ID:
+        logging.error("SPREADSHEET_ID is not set in the .env file")
         raise ValueError("SPREADSHEET_ID is not set in the .env file")
     
     if not CREDENTIALS_FILE:
+        logging.error("GOOGLE_CREDENTIALS_FILE is not set in the .env file")
         raise ValueError("GOOGLE_CREDENTIALS_FILE is not set in the .env file")
     
     if not os.path.exists(CREDENTIALS_FILE):
+        logging.error(f"Credentials file not found at: {CREDENTIALS_FILE}")
         raise FileNotFoundError(f"Credentials file not found at: {CREDENTIALS_FILE}")
     
     try:
@@ -66,14 +73,9 @@ async def setup():
         logging.info("Successfully connected to Google Sheets")
         return sheet
     
-    except FileNotFoundError as e:
-        logging.error(f"Credentials file error: {e}")
-        raise
-    except ValueError as e:
-        logging.error(f"Environment variable error: {e}")
-        raise
     except Exception as e:
         logging.error(f"Error connecting to Google Sheets: {str(e)}")
-        logging.error("Please ensure your credentials file is correctly formatted and has all required fields")
-        logging.error("Required fields include: client_email, token_uri, private_key, etc.")
+        if "MalformedError" in str(e):
+            logging.error("Your credentials file appears to be invalid. Please verify it contains all required fields.")
+            logging.error("Run the verify_credentials.py script to check your credentials file.")
         raise
