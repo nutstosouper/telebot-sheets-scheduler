@@ -3,9 +3,13 @@ from utils.db_api.google_sheets import sheet, setup
 
 async def get_user(user_id):
     """Get user by Telegram ID"""
+    global sheet
     # Ensure sheet is initialized
     if sheet is None:
-        await setup()
+        sheet = await setup()
+        if sheet is None:
+            print(f"Error getting user: sheet is not initialized")
+            return None
     
     # Find the user by ID
     try:
@@ -26,9 +30,13 @@ async def get_user(user_id):
 
 async def add_user(user_id, username, full_name, role='client'):
     """Add a new user to the database"""
+    global sheet
     # Ensure sheet is initialized
     if sheet is None:
-        await setup()
+        sheet = await setup()
+        if sheet is None:
+            print(f"Error adding user: sheet is not initialized")
+            return None
     
     # Check if user already exists
     existing_user = await get_user(user_id)
@@ -58,9 +66,13 @@ async def add_user(user_id, username, full_name, role='client'):
 
 async def update_user_role(user_id, new_role):
     """Update user role"""
+    global sheet
     # Ensure sheet is initialized
     if sheet is None:
-        await setup()
+        sheet = await setup()
+        if sheet is None:
+            print(f"Error updating user role: sheet is not initialized")
+            return False
     
     try:
         clients_sheet = sheet.worksheet('Clients')

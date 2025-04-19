@@ -40,6 +40,16 @@ class RoleMiddleware(BaseMiddleware):
                 role="client"
             )
         
+        # If we still couldn't get or create the user (due to sheet issues),
+        # use a default user object to prevent errors
+        if not user:
+            user = {
+                'user_id': user_id,
+                'username': username or '',
+                'full_name': full_name or '',
+                'role': 'client'  # Default role
+            }
+            
         # Add user data to middleware data for handlers to access
         data["user"] = user
         data["role"] = user["role"]

@@ -78,4 +78,4 @@ async def setup():
         if "MalformedError" in str(e):
             logging.error("Your credentials file appears to be invalid. Please verify it contains all required fields.")
             logging.error("Run the verify_credentials.py script to check your credentials file.")
-        raise
+        return None
