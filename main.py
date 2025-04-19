@@ -1,36 +1,29 @@
 
+import asyncio
 import logging
 import os
 from aiogram import Bot, Dispatcher
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+
 # Import modules
 from handlers import client, admin, ceo
 from middlewares.role_middleware import RoleMiddleware
 from utils.db_api import google_sheets
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-
 # Initialize bot and dispatcher
 bot = Bot(token=os.getenv('BOT_TOKEN'))
-
-# For aiogram 2.x:
-storage = MemoryStorage()
-dp = Dispatcher(bot=bot, storage=storage)  # Corrected initialization syntax
+dp = Dispatcher()  # В aiogram 3.x инициализация диспетчера изменилась
 
 # Setup middlewares
-dp.middleware.setup(RoleMiddleware())
-
-# Register handlers
-client.register_handlers(dp)
-admin.register_handlers(dp)
-ceo.register_handlers(dp)
+dp.message.middleware(RoleMiddleware())
+dp.callback_query.middleware(RoleMiddleware())
 
 # Register bot commands
 async def set_commands():
@@ -42,19 +35,26 @@ async def set_commands():
     ]
     await bot.set_my_commands(commands)
 
+# Register handlers
+async def register_all_handlers():
+    client.register_handlers(dp)
+    admin.register_handlers(dp)
+    ceo.register_handlers(dp)
+
 # Main function to start the bot
 async def main():
     # Initialize Google Sheets
     await google_sheets.setup()
     
+    # Register all handlers
+    await register_all_handlers()
+    
     # Set bot commands
     await set_commands()
     
     # Start polling
-    await dp.start_polling()
+    logging.info("Starting bot")
+    await dp.start_polling(bot)
 
 if __name__ == '__main__':
-    from aiogram import executor
-    
-    # Initialize Google Sheets before starting
-    executor.start_polling(dp, on_startup=main)
+    asyncio.run(main())
