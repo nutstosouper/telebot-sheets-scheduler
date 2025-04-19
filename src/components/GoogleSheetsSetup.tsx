@@ -1,4 +1,5 @@
 
+import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
@@ -19,26 +20,33 @@ const GoogleSheetsSetup = () => {
             <li className="text-gray-700">
               <span className="font-medium">Create a Google Cloud Project</span>
               <p className="text-sm text-gray-600 ml-6 mt-1">
-                Go to the <a href="https://console.cloud.google.com/" className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> and create a new project.
+                Go to the <a 
+                  href="https://console.cloud.google.com/" 
+                  className="text-blue-600 hover:underline" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                >
+                  Google Cloud Console
+                </a> and create a new project.
               </p>
             </li>
             <li className="text-gray-700">
               <span className="font-medium">Enable the Google Sheets API</span>
               <p className="text-sm text-gray-600 ml-6 mt-1">
-                In your project, navigate to "APIs & Services" > "Library" and enable the Google Sheets API.
+                In your project, navigate to &quot;APIs &amp; Services&quot; &gt; &quot;Library&quot; and enable the Google Sheets API.
               </p>
             </li>
             <li className="text-gray-700">
               <span className="font-medium">Create Service Account Credentials</span>
               <p className="text-sm text-gray-600 ml-6 mt-1">
-                Go to "APIs & Services" > "Credentials", click "Create credentials" and select "Service account". 
+                Go to &quot;APIs &amp; Services&quot; &gt; &quot;Credentials&quot;, click &quot;Create credentials&quot; and select &quot;Service account&quot;. 
                 Follow the instructions to create a service account.
               </p>
             </li>
             <li className="text-gray-700">
               <span className="font-medium">Generate JSON Key</span>
               <p className="text-sm text-gray-600 ml-6 mt-1">
-                After creating the service account, click on it, go to the "Keys" tab, and create a new key in JSON format. Download this file.
+                After creating the service account, click on it, go to the &quot;Keys&quot; tab, and create a new key in JSON format. Download this file.
               </p>
             </li>
             <li className="text-gray-700">
