@@ -4,6 +4,7 @@ import logging
 import os
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
+from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -19,7 +20,7 @@ from utils.db_api import google_sheets
 
 # Initialize bot and dispatcher
 bot = Bot(token=os.getenv('BOT_TOKEN'))
-dp = Dispatcher()
+dp = Dispatcher(storage=MemoryStorage())
 
 # Setup middlewares
 dp.message.middleware(RoleMiddleware())
@@ -31,7 +32,9 @@ async def set_commands():
         BotCommand(command="/start", description="Start the bot"),
         BotCommand(command="/help", description="Get help"),
         BotCommand(command="/book", description="Book a service"),
-        BotCommand(command="/appointments", description="View your appointments")
+        BotCommand(command="/appointments", description="View your appointments"),
+        BotCommand(command="/admin", description="Admin panel (restricted)"),
+        BotCommand(command="/ceo", description="CEO panel (restricted)")
     ]
     await bot.set_my_commands(commands)
 
@@ -61,8 +64,8 @@ async def main():
     except Exception as e:
         logging.error(f"Error starting bot: {str(e)}")
         if "MalformedError" in str(e):
-            logging.error("Your Google credentials file appears to be invalid!")
-            logging.error("Please run 'python utils/verify_credentials.py' to check your credentials file")
+            logging.error("Your Google credentials file appears to be invalid. Please verify it contains all required fields.")
+            logging.error("Run the verify_credentials.py script to check your credentials file")
         elif "FileNotFoundError" in str(e):
             logging.error("Make sure your .env file contains the correct path to your credentials file")
         elif "SPREADSHEET_ID" in str(e):
