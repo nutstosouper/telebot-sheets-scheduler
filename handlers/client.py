@@ -1,4 +1,3 @@
-
 from aiogram import Dispatcher, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
@@ -225,6 +224,10 @@ async def cmd_appointments(message: Message):
     # Get user appointments
     appointments = await appointment_commands.get_user_appointments(user_id)
     
+    # Debug information
+    debug_info = await appointment_commands.debug_appointments_structure()
+    print(f"Appointments debug info: {debug_info}")
+    
     if not appointments:
         await message.answer("You don't have any appointments.")
         return
@@ -308,6 +311,25 @@ async def back_to_menu(callback: CallbackQuery):
     # Answer callback query
     await callback.answer()
 
+async def cmd_debug(message: Message):
+    """Debug command to check the system state"""
+    user_id = message.from_user.id
+    
+    # Check services
+    services_debug = await service_commands.debug_services_structure()
+    await message.answer(f"Services structure:\n{services_debug}")
+    
+    # Check appointments
+    appointments_debug = await appointment_commands.debug_appointments_structure()
+    await message.answer(f"Appointments structure:\n{appointments_debug}")
+    
+    # Check user appointments specifically
+    appointments = await appointment_commands.get_user_appointments(user_id)
+    if appointments:
+        await message.answer(f"Found {len(appointments)} appointments for you:\n{appointments}")
+    else:
+        await message.answer("No appointments found for your user ID")
+
 def register_handlers(dp: Dispatcher):
     """Register client handlers"""
     # Command handlers
@@ -315,6 +337,7 @@ def register_handlers(dp: Dispatcher):
     dp.message.register(cmd_help, Command("help"))
     dp.message.register(cmd_book, Command("book"))
     dp.message.register(cmd_appointments, Command("appointments"))
+    dp.message.register(cmd_debug, Command("debug"))
     
     # Booking flow handlers
     dp.callback_query.register(service_selected, F.data.startswith("service_"))

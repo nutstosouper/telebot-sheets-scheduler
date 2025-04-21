@@ -1,4 +1,3 @@
-
 from utils.db_api.google_sheets import sheet, setup
 from datetime import datetime
 
@@ -16,11 +15,21 @@ async def get_user_appointments(user_id):
         appointments_sheet = sheet.worksheet('Appointments')
         # Get all records
         records = appointments_sheet.get_all_records()
-        # Filter records for the specific user
-        user_appointments = [
-            appointment for appointment in records 
-            if str(appointment.get('user_id', '')) == str(user_id)
-        ]
+        
+        # Debug: Print user_id and first few appointments to check format
+        print(f"Looking for appointments for user_id: {user_id}, type: {type(user_id)}")
+        if records and len(records) > 0:
+            print(f"First appointment record: {records[0]}")
+            print(f"First appointment user_id: {records[0].get('user_id')}, type: {type(records[0].get('user_id'))}")
+        
+        # Filter records for the specific user (with improved type handling)
+        user_appointments = []
+        for appointment in records:
+            # Convert both to strings for comparison to avoid type mismatch
+            if str(appointment.get('user_id', '')) == str(user_id):
+                user_appointments.append(appointment)
+        
+        print(f"Found {len(user_appointments)} appointments for user {user_id}")
         return user_appointments
     except Exception as e:
         print(f"Error getting appointments: {e}")
@@ -163,3 +172,30 @@ async def get_appointment(appointment_id):
     except Exception as e:
         print(f"Error getting appointment: {e}")
         return None
+
+# Debug function to check the structure of the Appointments worksheet
+async def debug_appointments_structure():
+    """Debug function to check the Appointments worksheet structure"""
+    global sheet
+    if sheet is None:
+        sheet = await setup()
+        if sheet is None:
+            return "Error: sheet is not initialized"
+    
+    try:
+        appointments_sheet = sheet.worksheet('Appointments')
+        # Get all values including header
+        all_values = appointments_sheet.get_all_values()
+        
+        if not all_values:
+            return "Appointments worksheet is empty"
+        
+        # Get header (column names)
+        header = all_values[0]
+        
+        # Get sample data
+        sample_data = [row for row in all_values[1:6]] if len(all_values) > 1 else ["No data"]
+        
+        return f"Header: {header}\nSample data (up to 5 rows): {sample_data}"
+    except Exception as e:
+        return f"Error checking appointments structure: {e}"
