@@ -15,24 +15,7 @@ async def get_all_services():
         services_sheet = sheet.worksheet('Services')
         # Get all records except header
         records = services_sheet.get_all_records()
-        
-        # Debug: Print the keys from the first record
-        if records and len(records) > 0:
-            print(f"Service record keys: {list(records[0].keys())}")
-        
-        # Ensure all required keys are present in each service
-        services = []
-        for record in records:
-            # Make sure each service has the required keys
-            service = {
-                'id': record.get('id', ''),
-                'name': record.get('name', ''),
-                'description': record.get('description', ''),
-                'price': record.get('price', '')
-            }
-            services.append(service)
-        
-        return services
+        return records
     except Exception as e:
         print(f"Error getting services: {e}")
         return []
@@ -126,30 +109,3 @@ async def update_service(service_id, name=None, description=None, price=None):
     except Exception as e:
         print(f"Error updating service: {e}")
         return False
-
-# Debug function to check the structure of the Services worksheet
-async def debug_services_structure():
-    """Debug function to check the Services worksheet structure"""
-    global sheet
-    if sheet is None:
-        sheet = await setup()
-        if sheet is None:
-            return "Error: sheet is not initialized"
-    
-    try:
-        services_sheet = sheet.worksheet('Services')
-        # Get all values including header
-        all_values = services_sheet.get_all_values()
-        
-        if not all_values:
-            return "Services worksheet is empty"
-        
-        # Get header (column names)
-        header = all_values[0]
-        
-        # Get sample data
-        sample_data = all_values[1] if len(all_values) > 1 else ["No data"]
-        
-        return f"Header: {header}\nSample data: {sample_data}"
-    except Exception as e:
-        return f"Error checking services structure: {e}"

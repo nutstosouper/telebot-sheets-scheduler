@@ -87,14 +87,9 @@ def get_all_services_keyboard(services):
     """Generate a keyboard listing all services"""
     keyboard = InlineKeyboardBuilder()
     for service in services:
-        # Handle both naming conventions for service fields
-        service_id = service.get('id', service.get('Service ID', ''))
-        service_name = service.get('name', service.get('Name', 'Unknown'))
-        service_price = service.get('price', service.get('Price', ''))
-        
         keyboard.button(
-            text=f"{service_name} - {service_price}", 
-            callback_data=f"admin_view_service_{service_id}"
+            text=f"{service['name']} - {service['price']}", 
+            callback_data=f"admin_view_service_{service['id']}"
         )
     
     keyboard.button(
@@ -124,15 +119,9 @@ def get_all_appointments_keyboard(appointments):
     """Generate a keyboard displaying all appointments"""
     keyboard = InlineKeyboardBuilder()
     for appointment in appointments:
-        # Get values with fallbacks for different column naming conventions
-        app_id = appointment.get('id', appointment.get('Appointment ID', 'unknown'))
-        app_date = appointment.get('date', appointment.get('Date', 'unknown'))
-        app_time = appointment.get('time', appointment.get('Time', 'unknown'))
-        app_status = appointment.get('status', appointment.get('Status', 'unknown'))
-        
         keyboard.button(
-            text=f"ID: {app_id} - {app_date} {app_time} - {app_status}", 
-            callback_data=f"admin_view_appointment_{app_id}"
+            text=f"ID: {appointment['id']} - {appointment['date']} {appointment['time']} - {appointment['status']}", 
+            callback_data=f"admin_view_appointment_{appointment['id']}"
         )
     
     keyboard.button(

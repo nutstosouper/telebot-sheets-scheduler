@@ -16,36 +16,11 @@ async def get_user_appointments(user_id):
         appointments_sheet = sheet.worksheet('Appointments')
         # Get all records
         records = appointments_sheet.get_all_records()
-        
-        # Debug: Print user_id and first few appointments to check format
-        print(f"Looking for appointments for user_id: {user_id}, type: {type(user_id)}")
-        if records and len(records) > 0:
-            print(f"First appointment record: {records[0]}")
-            print(f"Available keys in first record: {list(records[0].keys())}")
-        
-        # Filter records for the specific user with support for both column naming formats
-        user_appointments = []
-        for appointment in records:
-            # Handle potential different column naming conventions
-            appointment_user_id = None
-            
-            # Check various possible column names for user ID
-            if 'user_id' in appointment:
-                appointment_user_id = appointment.get('user_id')
-            elif 'User ID' in appointment:
-                appointment_user_id = appointment.get('User ID')
-            elif 'User_ID' in appointment:
-                appointment_user_id = appointment.get('User_ID')
-            
-            # Check if we got a user ID and compare as strings
-            if appointment_user_id is not None:
-                # Convert both to strings for comparison to avoid type mismatch
-                if str(appointment_user_id) == str(user_id):
-                    # Create a standardized appointment object
-                    standardized_appointment = standardize_appointment(appointment)
-                    user_appointments.append(standardized_appointment)
-        
-        print(f"Found {len(user_appointments)} appointments for user {user_id}")
+        # Filter records for the specific user
+        user_appointments = [
+            appointment for appointment in records 
+            if str(appointment.get('user_id', '')) == str(user_id)
+        ]
         return user_appointments
     except Exception as e:
         print(f"Error getting appointments: {e}")
@@ -65,89 +40,126 @@ async def get_all_appointments():
         appointments_sheet = sheet.worksheet('Appointments')
         # Get all records except header
         records = appointments_sheet.get_all_records()
-        
-        # Print keys in the first record for debugging
-        if records and len(records) > 0:
-            print(f"Appointment record keys: {list(records[0].keys())}")
-        
-        # Standardize all appointment records
-        standardized_records = []
-        for appointment in records:
-            standardized_records.append(standardize_appointment(appointment))
-            
-        return standardized_records
+        return records
     except Exception as e:
         print(f"Error getting all appointments: {e}")
         return []
 
-def standardize_appointment(appointment):
-    """Standardize appointment object with consistent keys"""
-    # Check for 'id' or 'Appointment ID' or 'Appointment_ID'
-    appointment_id = appointment.get('id', appointment.get('Appointment ID', appointment.get('Appointment_ID', '')))
-    
-    # Check for 'user_id' or 'User ID' or 'User_ID'
-    user_id = appointment.get('user_id', appointment.get('User ID', appointment.get('User_ID', '')))
-    
-    # Check for 'service_id' or 'Service ID' or 'Service_ID'
-    service_id = appointment.get('service_id', appointment.get('Service ID', appointment.get('Service_ID', '')))
-    
-    # Check for 'date' or 'Date'
-    date = appointment.get('date', appointment.get('Date', ''))
-    
-    # Check for 'time' or 'Time'
-    time = appointment.get('time', appointment.get('Time', ''))
-    
-    # Check for 'status' or 'Status'
-    status = appointment.get('status', appointment.get('Status', 'confirmed'))
-    
-    return {
-        'id': appointment_id,
-        'user_id': user_id,
-        'service_id': service_id,
-        'date': date,
-        'time': time,
-        'status': status
-    }
-
-# ... keep existing code (add_appointment, update_appointment_status, get_appointment functions)
-
-# Updated debug function to check the structure of the Appointments worksheet
-async def debug_appointments_structure():
-    """Debug function to check the Appointments worksheet structure"""
+async def add_appointment(user_id, service_id, date, time):
+    """Add a new appointment"""
     global sheet
+    # Ensure sheet is initialized
     if sheet is None:
         sheet = await setup()
         if sheet is None:
-            return "Error: sheet is not initialized"
+            print(f"Error adding appointment: sheet is not initialized")
+            return None
     
     try:
         appointments_sheet = sheet.worksheet('Appointments')
-        # Get all values including header
-        all_values = appointments_sheet.get_all_values()
+        # Get all appointments to determine next ID
+        appointments = await get_all_appointments()
+        next_id = 1
+        if appointments:
+            # Find the maximum ID and increment by 1
+            next_id = max(int(appointment.get('id', 0)) for appointment in appointments) + 1
         
-        if not all_values:
-            return "Appointments worksheet is empty"
+        # Add the new appointment with "confirmed" status by default
+        appointments_sheet.append_row([
+            str(next_id),
+            str(user_id),
+            str(service_id),
+            date,
+            time,
+            "confirmed"
+        ])
         
-        # Get header (column names)
-        header = all_values[0]
-        
-        # Get sample data
-        sample_data = [row for row in all_values[1:6]] if len(all_values) > 1 else ["No data"]
-        
-        # Get all records to check dictionary keys
-        records = appointments_sheet.get_all_records()
-        record_keys = "No records found"
-        if records and len(records) > 0:
-            record_keys = list(records[0].keys())
-            # Print the first record for debugging
-            first_record = records[0]
+        # Add to history
+        try:
+            history_sheet = sheet.worksheet('History')
+            # Get service price for the history record
+            services_sheet = sheet.worksheet('Services')
+            service_cell = services_sheet.find(str(service_id), in_column=1)
+            price = "0"
+            if service_cell:
+                price = services_sheet.cell(service_cell.row, 4).value
             
-            # Try accessing with different key formats
-            id_value = first_record.get('id', first_record.get('Appointment ID', 'Not found'))
-            user_id_value = first_record.get('user_id', first_record.get('User ID', 'Not found'))
-            
-            return f"Header: {header}\nSample data (up to 5 rows): {sample_data}\nRecord keys: {record_keys}\nFirst ID value: {id_value}\nFirst User ID value: {user_id_value}"
+            # Add to history
+            history_sheet.append_row([
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                str(user_id),
+                str(service_id),
+                date,
+                time,
+                price
+            ])
+        except Exception as e:
+            print(f"Error adding to history: {e}")
         
-        return f"Header: {header}\nSample data (up to 5 rows): {sample_data}\nRecord keys: {record_keys}"
+        # Return the newly created appointment
+        return {
+            'id': next_id,
+            'user_id': user_id,
+            'service_id': service_id,
+            'date': date,
+            'time': time,
+            'status': "confirmed"
+        }
     except Exception as e:
-        return f"Error checking appointments structure: {e}"
+        print(f"Error adding appointment: {e}")
+        return None
+
+async def update_appointment_status(appointment_id, new_status):
+    """Update appointment status"""
+    global sheet
+    # Ensure sheet is initialized
+    if sheet is None:
+        sheet = await setup()
+        if sheet is None:
+            print(f"Error updating appointment: sheet is not initialized")
+            return False
+    
+    try:
+        appointments_sheet = sheet.worksheet('Appointments')
+        # Find the appointment by ID
+        cell = appointments_sheet.find(str(appointment_id), in_column=1)
+        if not cell:
+            return False
+        
+        # Update the status (column 6)
+        appointments_sheet.update_cell(cell.row, 6, new_status)
+        return True
+    except Exception as e:
+        print(f"Error updating appointment: {e}")
+        return False
+
+async def get_appointment(appointment_id):
+    """Get appointment by ID"""
+    global sheet
+    # Ensure sheet is initialized
+    if sheet is None:
+        sheet = await setup()
+        if sheet is None:
+            print(f"Error getting appointment: sheet is not initialized")
+            return None
+    
+    try:
+        appointments_sheet = sheet.worksheet('Appointments')
+        # Find the appointment by ID
+        cell = appointments_sheet.find(str(appointment_id), in_column=1)
+        if not cell:
+            return None
+        
+        # Get the row values
+        row = appointments_sheet.row_values(cell.row)
+        return {
+            'id': row[0],
+            'user_id': row[1],
+            'service_id': row[2],
+            'date': row[3],
+            'time': row[4],
+            'status': row[5]
+        }
+    except Exception as e:
+        print(f"Error getting appointment: {e}")
+        return None
