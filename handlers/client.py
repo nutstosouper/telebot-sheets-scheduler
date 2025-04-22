@@ -1,5 +1,5 @@
 
-from aiogram import Dispatcher, F
+from aiogram import Dispatcher, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -11,10 +11,11 @@ from keyboards import client_keyboards
 # Define states for booking flow
 class BookingStates(StatesGroup):
     selecting_master = State()
+    selecting_category = State()
     selecting_service = State()
     selecting_date = State()
     selecting_time = State()
-    selecting_payment = State()
+    selecting_special_offers = State()
     confirming = State()
 
 async def cmd_start(message: Message):
@@ -106,25 +107,20 @@ async def master_selected(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     
-    # Get available services
-    services = await service_commands.get_all_services()
+    # Check for special offers
+    offers = await service_commands.get_all_offers()
     
-    if not services:
+    if offers:
+        # Show special offers first
+        await state.set_state(BookingStates.selecting_special_offers)
+        
         await callback.message.edit_text(
-            "К сожалению, в данный момент нет доступных услуг. Пожалуйста, попробуйте позже.",
-            reply_markup=client_keyboards.get_back_to_menu_keyboard()
+            f"Вы выбрали мастера: {master['name']}\n\nУ нас есть специальные предложения для вас:",
+            reply_markup=client_keyboards.get_special_offers_keyboard(offers, master_id)
         )
-        await callback.answer()
-        return
-    
-    # Set state to selecting service
-    await state.set_state(BookingStates.selecting_service)
-    
-    # Show services keyboard
-    await callback.message.edit_text(
-        f"Вы выбрали мастера: {master['name']}\n\nПожалуйста, выберите услугу:",
-        reply_markup=client_keyboards.get_services_keyboard(services)
-    )
+    else:
+        # No offers, proceed to service categories
+        await select_service_category(callback, state)
     
     # Answer callback query
     await callback.answer()
@@ -173,24 +169,160 @@ async def book_with_master(callback: CallbackQuery, state: FSMContext):
     # Store selected master ID in state
     await state.update_data(master_id=master_id)
     
-    # Get available services
-    services = await service_commands.get_all_services()
+    # Get all special offers
+    offers = await service_commands.get_all_offers()
     
-    if not services:
+    if offers:
+        # Show special offers first
+        await state.set_state(BookingStates.selecting_special_offers)
+        
         await callback.message.edit_text(
-            "К сожалению, в данный момент нет доступных услуг. Пожалуйста, попробуйте позже.",
+            "У нас есть специальные предложения для вас:",
+            reply_markup=client_keyboards.get_special_offers_keyboard(offers, master_id)
+        )
+    else:
+        # No offers, proceed to service categories
+        await select_service_category(callback, state)
+    
+    # Answer callback query
+    await callback.answer()
+
+async def offer_selected(callback: CallbackQuery, state: FSMContext):
+    """Handle special offer selection"""
+    # Extract offer ID and master ID from callback data
+    parts = callback.data.split('_')
+    offer_id = parts[1]
+    master_id = parts[2]
+    
+    # Store selected offer ID and master ID in state
+    await state.update_data(service_id=offer_id, master_id=master_id, is_offer=True)
+    
+    # Get offer details
+    offer = await service_commands.get_offer(offer_id)
+    if not offer:
+        await callback.message.edit_text(
+            "Предложение не найдено. Пожалуйста, выберите другое предложение.",
             reply_markup=client_keyboards.get_back_to_menu_keyboard()
         )
         await callback.answer()
         return
+    
+    # Store duration in state
+    await state.update_data(duration=offer.get('duration', 60))
+    
+    # Set state to selecting date
+    await state.set_state(BookingStates.selecting_date)
+    
+    # Show offer details and date selection keyboard
+    offer_text = f"""
+Вы выбрали специальное предложение:
+
+📌 {offer['name']}
+💰 Цена: {offer['price']}
+⏱️ Длительность: {offer.get('duration', 60)} мин
+
+📝 Описание: {offer['description']}
+
+Пожалуйста, выберите дату для записи:
+"""
+    
+    await callback.message.edit_text(
+        offer_text,
+        reply_markup=client_keyboards.get_date_keyboard()
+    )
+    
+    # Answer callback query
+    await callback.answer()
+
+async def skip_offers(callback: CallbackQuery, state: FSMContext):
+    """Skip special offers and go to regular services"""
+    # Extract master ID from callback data
+    master_id = callback.data.split('_')[2]
+    
+    # Store selected master ID in state
+    await state.update_data(master_id=master_id)
+    
+    # Proceed to service categories
+    await select_service_category(callback, state)
+    
+    # Answer callback query
+    await callback.answer()
+
+async def select_service_category(callback, state: FSMContext):
+    """Show service categories to the user"""
+    # Get services grouped by category
+    services_by_category = await service_commands.get_services_by_category()
+    
+    if not services_by_category:
+        await callback.message.edit_text(
+            "К сожалению, в данный момент нет доступных услуг. Пожалуйста, попробуйте позже.",
+            reply_markup=client_keyboards.get_back_to_menu_keyboard()
+        )
+        return
+    
+    # If only one category or "uncategorized", show services directly
+    if len(services_by_category) == 1:
+        category_name = list(services_by_category.keys())[0]
+        services = services_by_category[category_name]
+        
+        # Set state to selecting service
+        await state.set_state(BookingStates.selecting_service)
+        
+        # Show services keyboard
+        await callback.message.edit_text(
+            f"Категория: {category_name}\n\nПожалуйста, выберите услугу:",
+            reply_markup=client_keyboards.get_services_keyboard(services)
+        )
+    else:
+        # Multiple categories, show category selection
+        await state.set_state(BookingStates.selecting_category)
+        
+        await callback.message.edit_text(
+            "Пожалуйста, выберите категорию услуг:",
+            reply_markup=client_keyboards.get_services_by_category_keyboard(services_by_category)
+        )
+
+async def category_selected(callback: CallbackQuery, state: FSMContext):
+    """Handle category selection"""
+    # Extract category name from callback data
+    category = callback.data.split('_')[1]
+    
+    # Get services in this category
+    services_by_category = await service_commands.get_services_by_category()
+    
+    if category not in services_by_category:
+        await callback.message.edit_text(
+            "Категория не найдена. Пожалуйста, выберите другую категорию.",
+            reply_markup=client_keyboards.get_back_to_menu_keyboard()
+        )
+        await callback.answer()
+        return
+    
+    services = services_by_category[category]
     
     # Set state to selecting service
     await state.set_state(BookingStates.selecting_service)
     
     # Show services keyboard
     await callback.message.edit_text(
-        "Пожалуйста, выберите услугу:",
-        reply_markup=client_keyboards.get_services_keyboard(services)
+        f"Категория: {category}\n\nПожалуйста, выберите услугу:",
+        reply_markup=client_keyboards.get_services_in_category_keyboard(services, category)
+    )
+    
+    # Answer callback query
+    await callback.answer()
+
+async def back_to_categories(callback: CallbackQuery, state: FSMContext):
+    """Handle going back to categories"""
+    # Set state to selecting category
+    await state.set_state(BookingStates.selecting_category)
+    
+    # Get services grouped by category
+    services_by_category = await service_commands.get_services_by_category()
+    
+    await callback.message.edit_text(
+        "Пожалуйста, выберите категорию услуг:",
+        reply_markup=client_keyboards.get_services_by_category_keyboard(services_by_category)
     )
     
     # Answer callback query
@@ -212,7 +344,7 @@ async def service_selected(callback: CallbackQuery, state: FSMContext):
         return
     
     # Store selected service ID and duration in state
-    await state.update_data(service_id=service_id, duration=service.get('duration', 60))
+    await state.update_data(service_id=service_id, duration=service.get('duration', 60), is_offer=False)
     
     # Get state data to check if master is already selected
     data = await state.get_data()
@@ -235,11 +367,13 @@ async def service_selected(callback: CallbackQuery, state: FSMContext):
         
         # Show service details and masters keyboard
         service_text = f"""
-Вы выбрали услугу: {service['name']}
-Цена: {service['price']}
-Длительность: {service.get('duration', 60)} мин
+Вы выбрали услугу:
 
-Описание: {service['description']}
+📌 {service['name']}
+💰 Цена: {service['price']}
+⏱️ Длительность: {service.get('duration', 60)} мин
+
+📝 Описание: {service['description']}
 
 Теперь выберите мастера:
 """
@@ -257,9 +391,26 @@ async def service_selected(callback: CallbackQuery, state: FSMContext):
     # Set state to selecting date
     await state.set_state(BookingStates.selecting_date)
     
+    # Get master name
+    master_name = "Выбранный мастер"
+    master = await master_commands.get_master(data['master_id'])
+    if master:
+        master_name = master['name']
+    
     # Show date selection keyboard
     await callback.message.edit_text(
-        f"Вы выбрали услугу: {service['name']}\nЦена: {service['price']}\n\nПожалуйста, выберите дату для записи:",
+        f"""
+Вы выбрали услугу:
+
+📌 {service['name']}
+💰 Цена: {service['price']}
+⏱️ Длительность: {service.get('duration', 60)} мин
+👨‍💼 Мастер: {master_name}
+
+📝 Описание: {service['description']}
+
+Пожалуйста, выберите дату для записи:
+""",
         reply_markup=client_keyboards.get_date_keyboard()
     )
     
@@ -292,7 +443,7 @@ async def date_selected(callback: CallbackQuery, state: FSMContext):
     # Answer callback query
     await callback.answer()
 
-async def time_selected(callback: CallbackQuery, state: FSMContext):
+async def time_selected(callback: CallbackQuery, state: FSMContext, bot: Bot):
     """Handle time selection"""
     # Extract data from callback data
     parts = callback.data.split('_')
@@ -320,10 +471,16 @@ async def time_selected(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     master_id = data.get('master_id')
     service_id = data.get('service_id')
+    is_offer = data.get('is_offer', False)
     
     # Get service details
-    service = await service_commands.get_service(service_id)
-    if not service:
+    service_info = None
+    if is_offer:
+        service_info = await service_commands.get_offer(service_id)
+    else:
+        service_info = await service_commands.get_service(service_id)
+        
+    if not service_info:
         await callback.message.edit_text(
             "Извините, выбранная услуга больше недоступна.",
             reply_markup=client_keyboards.get_back_to_menu_keyboard()
@@ -339,80 +496,18 @@ async def time_selected(callback: CallbackQuery, state: FSMContext):
         if master:
             master_name = master.get('name', "Не указано")
     
-    # Set state to selecting payment
-    await state.set_state(BookingStates.selecting_payment)
-    
-    # Show payment method selection
-    confirmation_text = f"""
-Подтвердите детали записи:
-
-Услуга: {service['name']}
-Цена: {service['price']}
-Дата: {date}
-Время: {time}
-Мастер: {master_name}
-
-Выберите способ оплаты:
-"""
-    
-    await callback.message.edit_text(
-        confirmation_text,
-        reply_markup=client_keyboards.get_payment_method_keyboard(service_id, date, time, master_id)
-    )
-    
-    # Answer callback query
-    await callback.answer()
-
-async def payment_selected(callback: CallbackQuery, state: FSMContext):
-    """Handle payment method selection"""
-    # Extract data from callback data
-    parts = callback.data.split('_')
-    payment_method = parts[1]
-    service_id = parts[2]
-    date = parts[3]
-    time = parts[4]
-    
-    # Check if master_id is in callback data
-    master_id = None
-    if len(parts) > 5:
-        master_id = parts[5]
-    
-    # Store payment method in state
-    await state.update_data(payment_method=payment_method)
-    
     # Set state to confirming
     await state.set_state(BookingStates.confirming)
-    
-    # Get all stored data
-    data = await state.get_data()
-    
-    # Get service details
-    service = await service_commands.get_service(service_id)
-    
-    # Get master details if available
-    master_name = "Не выбран"
-    if master_id:
-        master = await master_commands.get_master(master_id)
-        if master:
-            master_name = master.get('name', "Не указано")
-    
-    # Format payment method for display
-    payment_display = {
-        'cash': 'Наличные',
-        'card': 'Карта/Терминал',
-        'transfer': 'Перевод'
-    }.get(payment_method, payment_method)
     
     # Show confirmation message and keyboard
     confirmation_text = f"""
 Пожалуйста, подтвердите вашу запись:
 
-Услуга: {service['name']}
-Цена: {service['price']}
-Дата: {date}
-Время: {time}
-Мастер: {master_name}
-Способ оплаты: {payment_display}
+{'🎁 Специальное предложение' if is_offer else '📌 Услуга'}: {service_info['name']}
+💰 Цена: {service_info['price']}
+📅 Дата: {date}
+⏰ Время: {time}
+👨‍💼 Мастер: {master_name}
 
 Нажмите "Подтвердить" для завершения записи.
 """
@@ -425,54 +520,7 @@ async def payment_selected(callback: CallbackQuery, state: FSMContext):
     # Answer callback query
     await callback.answer()
 
-async def back_to_confirmation(callback: CallbackQuery, state: FSMContext):
-    """Handle going back to confirmation"""
-    # Extract data from callback data
-    parts = callback.data.split('_')
-    service_id = parts[2]
-    date = parts[3]
-    time = parts[4]
-    
-    # Check if master_id is in callback data
-    master_id = None
-    if len(parts) > 5:
-        master_id = parts[5]
-    
-    # Set state to selecting payment
-    await state.set_state(BookingStates.selecting_payment)
-    
-    # Get service details
-    service = await service_commands.get_service(service_id)
-    
-    # Get master details if available
-    master_name = "Не выбран"
-    if master_id:
-        master = await master_commands.get_master(master_id)
-        if master:
-            master_name = master.get('name', "Не указано")
-    
-    # Show payment method selection
-    confirmation_text = f"""
-Подтвердите детали записи:
-
-Услуга: {service['name']}
-Цена: {service['price']}
-Дата: {date}
-Время: {time}
-Мастер: {master_name}
-
-Выберите способ оплаты:
-"""
-    
-    await callback.message.edit_text(
-        confirmation_text,
-        reply_markup=client_keyboards.get_payment_method_keyboard(service_id, date, time, master_id)
-    )
-    
-    # Answer callback query
-    await callback.answer()
-
-async def booking_confirmed(callback: CallbackQuery, state: FSMContext):
+async def booking_confirmed(callback: CallbackQuery, state: FSMContext, bot: Bot):
     """Handle booking confirmation"""
     # Extract data from callback
     parts = callback.data.split('_')
@@ -490,7 +538,7 @@ async def booking_confirmed(callback: CallbackQuery, state: FSMContext):
     
     # Get all stored data
     data = await state.get_data()
-    payment_method = data.get('payment_method', 'cash')
+    is_offer = data.get('is_offer', False)
     
     # Create appointment
     appointment = await appointment_commands.add_appointment(
@@ -498,14 +546,18 @@ async def booking_confirmed(callback: CallbackQuery, state: FSMContext):
         service_id=service_id,
         date=date,
         time=time,
-        master_id=master_id,
-        payment_method=payment_method
+        master_id=master_id
     )
     
     if appointment:
-        # Get service details
-        service = await service_commands.get_service(service_id)
-        service_name = service['name'] if service else "Услуга"
+        # Get service or offer details
+        service_info = None
+        if is_offer:
+            service_info = await service_commands.get_offer(service_id)
+        else:
+            service_info = await service_commands.get_service(service_id)
+            
+        service_name = service_info['name'] if service_info else "Услуга"
         
         # Get master details
         master_name = "Не выбран"
@@ -513,9 +565,27 @@ async def booking_confirmed(callback: CallbackQuery, state: FSMContext):
             master = await master_commands.get_master(master_id)
             if master:
                 master_name = master.get('name', "Не указано")
+                
+                # Notify master about new appointment
+                try:
+                    if master.get('user_id'):
+                        master_user_id = master.get('user_id')
+                        await bot.send_message(
+                            master_user_id,
+                            f"📅 Новая запись!\n\nID: {appointment['id']}\nУслуга: {service_name}\nДата: {date}\nВремя: {time}\nКлиент: {user_id}"
+                        )
+                except Exception as e:
+                    print(f"Error sending notification to master: {e}")
+        
+        # Check if this is the first appointment from this user
+        is_verified = await appointment_commands.is_user_verified(user_id)
+        
+        status_message = ""
+        if not is_verified:
+            status_message = "\n\n⏳ Запись ожидает подтверждения администратора."
         
         await callback.message.edit_text(
-            f"✅ Ваша запись подтверждена!\n\nID: {appointment['id']}\nУслуга: {service_name}\nДата: {date}\nВремя: {time}\nМастер: {master_name}\n\nВы можете просмотреть или отменить ваши записи в разделе 'Мои записи'",
+            f"✅ Ваша запись создана!\n\nID: {appointment['id']}\nУслуга: {service_name}\nДата: {date}\nВремя: {time}\nМастер: {master_name}{status_message}\n\nВы можете просмотреть или отменить ваши записи в разделе 'Мои записи'",
             reply_markup=client_keyboards.get_back_to_menu_keyboard()
         )
     else:
@@ -606,6 +676,76 @@ async def view_my_appointments(callback: CallbackQuery):
     
     await callback.answer()
 
+async def expand_date_appointments(callback: CallbackQuery):
+    """Handle expanding appointments for a specific date"""
+    # Extract date from callback data
+    date = callback.data.split('_')[2]
+    
+    user_id = callback.from_user.id
+    
+    # Get all user appointments
+    all_appointments = await appointment_commands.get_user_appointments(user_id)
+    
+    # Filter appointments for the selected date
+    date_appointments = [a for a in all_appointments if a.get('date') == date]
+    
+    if not date_appointments:
+        await callback.message.edit_text(
+            f"Нет записей на {date}.",
+            reply_markup=client_keyboards.get_back_to_menu_keyboard()
+        )
+    else:
+        await callback.message.edit_text(
+            f"Записи на {date}:",
+            reply_markup=client_keyboards.get_date_appointments_keyboard(date_appointments, date)
+        )
+    
+    await callback.answer()
+
+async def filter_appointments(callback: CallbackQuery):
+    """Handle filtering appointments"""
+    filter_type = callback.data.split('_')[1]
+    user_id = callback.from_user.id
+    
+    # Get all user appointments
+    all_appointments = await appointment_commands.get_user_appointments(user_id)
+    
+    if not all_appointments:
+        await callback.message.edit_text(
+            "У вас нет записей.",
+            reply_markup=client_keyboards.get_main_menu_keyboard()
+        )
+        await callback.answer()
+        return
+    
+    filtered_appointments = []
+    
+    if filter_type == "active":
+        # Show only active (confirmed and pending) appointments
+        filtered_appointments = [a for a in all_appointments if a.get('status') in ['confirmed', 'pending']]
+        title = "Активные записи"
+    elif filter_type == "recent":
+        # Show 3 most recent appointments
+        sorted_appointments = sorted(all_appointments, key=lambda a: (a.get('date'), a.get('time')), reverse=True)
+        filtered_appointments = sorted_appointments[:3]
+        title = "Последние 3 записи"
+    else:  # all
+        filtered_appointments = all_appointments
+        title = "Все записи"
+    
+    if not filtered_appointments:
+        await callback.message.edit_text(
+            f"Нет записей в категории '{title}'.",
+            reply_markup=client_keyboards.get_back_to_menu_keyboard()
+        )
+    else:
+        await callback.message.edit_text(
+            f"{title}:",
+            reply_markup=client_keyboards.get_appointments_keyboard(filtered_appointments)
+        )
+    
+    await callback.answer()
+
 async def cmd_appointments(message: Message):
     """Handle the /appointments command"""
     user_id = message.from_user.id
@@ -643,63 +783,108 @@ async def view_appointment(callback: CallbackQuery):
         return
     
     # Get service details
-    service = await service_commands.get_service(appointment["service_id"])
+    service_id = appointment["service_id"]
+    is_offer = False
+    
+    # Try to get as service first
+    service = await service_commands.get_service(service_id)
+    if not service:
+        # Try to get as special offer
+        service = await service_commands.get_offer(service_id)
+        is_offer = True
+    
     service_name = "Неизвестная услуга"
+    service_price = ""
+    service_duration = ""
+    service_description = ""
+    
     if service:
         service_name = service["name"]
+        service_price = f"\n💰 Цена: {service.get('price', 'Не указана')}"
+        service_duration = f"\n⏱️ Длительность: {service.get('duration', 'Не указана')} мин"
+        service_description = f"\n\n📝 Описание: {service.get('description', 'Нет описания')}"
     
     # Get master details if available
     master_name = "Не указан"
+    master_telegram = ""
+    master_address = ""
+    
     if appointment.get('master_id'):
         master = await master_commands.get_master(appointment['master_id'])
         if master:
             master_name = master.get('name', "Не указано")
+            
+            if master.get('telegram'):
+                master_telegram = f"\n📱 Telegram: {master.get('telegram')}"
+            
+            if master.get('address'):
+                master_address = f"\n📍 Адрес: {master.get('address')}"
     
     # Format status
     status_text = {
         'confirmed': '✅ Подтверждено',
         'canceled': '❌ Отменено',
         'completed': '✓ Выполнено',
-        'paid': '💰 Оплачено'
+        'paid': '💰 Оплачено',
+        'pending': '⏳ Ожидает подтверждения'
     }.get(appointment.get('status', ''), appointment.get('status', 'Неизвестно'))
     
     # Format payment method
-    payment_text = {
-        'cash': '💵 Наличные',
-        'card': '💳 Карта/Терминал',
-        'transfer': '📲 Перевод'
-    }.get(appointment.get('payment_method', ''), 'Не указан')
+    payment_text = ""
+    if appointment.get('payment_method'):
+        payment_method = appointment.get('payment_method')
+        payment_display = {
+            'cash': '💵 Наличные',
+            'card': '💳 Карта/Терминал',
+            'transfer': '📲 Перевод'
+        }.get(payment_method, payment_method)
+        payment_text = f"\nСпособ оплаты: {payment_display}"
     
     # Show appointment details
     details_text = f"""
 Детали записи:
 
 ID: {appointment['id']}
-Услуга: {service_name}
-Дата: {appointment['date']}
-Время: {appointment['time']}
-Мастер: {master_name}
-Статус: {status_text}
-Способ оплаты: {payment_text}
+{'🎁 Специальное предложение' if is_offer else '📌 Услуга'}: {service_name}{service_price}{service_duration}
+📅 Дата: {appointment['date']}
+⏰ Время: {appointment['time']}
+👨‍💼 Мастер: {master_name}{master_telegram}{master_address}
+📊 Статус: {status_text}{payment_text}{service_description}
 """
     
     await callback.message.edit_text(
         details_text,
-        reply_markup=client_keyboards.get_appointments_keyboard([appointment])
+        reply_markup=client_keyboards.get_appointment_actions_keyboard(appointment)
     )
     
     # Answer callback query
     await callback.answer()
 
-async def cancel_appointment(callback: CallbackQuery):
+async def cancel_appointment(callback: CallbackQuery, bot: Bot):
     """Handle canceling an appointment"""
     # Extract appointment ID from callback data
     appointment_id = callback.data.split('_')[2]
+    
+    # Get appointment details before canceling
+    appointment = await appointment_commands.get_appointment(appointment_id)
     
     # Update appointment status
     success = await appointment_commands.update_appointment_status(appointment_id, "canceled")
     
     if success:
+        # Notify the master if exists
+        if appointment and appointment.get('master_id'):
+            try:
+                master = await master_commands.get_master(appointment.get('master_id'))
+                if master and master.get('user_id'):
+                    master_user_id = master.get('user_id')
+                    await bot.send_message(
+                        master_user_id,
+                        f"❌ Отмена записи!\n\nID: {appointment_id}\nДата: {appointment.get('date')}\nВремя: {appointment.get('time')}\nКлиент: {appointment.get('user_id')}"
+                    )
+            except Exception as e:
+                print(f"Error sending notification to master: {e}")
+                
         await callback.message.edit_text(
             f"✅ Запись {appointment_id} была отменена.",
             reply_markup=client_keyboards.get_back_to_menu_keyboard()
@@ -729,23 +914,62 @@ async def book_again(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     
+    # Get service details
+    service_id = appointment['service_id']
+    is_offer = False
+    
+    # Try to get as service first
+    service = await service_commands.get_service(service_id)
+    if not service:
+        # Try to get as special offer
+        service = await service_commands.get_offer(service_id)
+        is_offer = True
+    
+    if not service:
+        await callback.message.edit_text(
+            "Извините, выбранная услуга больше недоступна.",
+            reply_markup=client_keyboards.get_back_to_menu_keyboard()
+        )
+        await callback.answer()
+        return
+    
+    # Get master details
+    master_name = "Не выбран"
+    if appointment.get('master_id'):
+        master = await master_commands.get_master(appointment.get('master_id'))
+        if master:
+            master_name = master.get('name', "Не указано")
+    
+    # Display booking information first
+    await callback.message.edit_text(
+        f"""
+Вы хотите записаться снова на:
+
+{'🎁 Специальное предложение' if is_offer else '📌 Услуга'}: {service['name']}
+💰 Цена: {service['price']}
+⏱️ Длительность: {service.get('duration', 60)} мин
+👨‍💼 Мастер: {master_name}
+
+📝 Описание: {service['description']}
+
+Пожалуйста, выберите дату для новой записи:
+""",
+        reply_markup=client_keyboards.get_date_keyboard()
+    )
+    
     # Reset state
     await state.clear()
     
     # Store service ID and master ID from previous appointment
     await state.update_data(
         service_id=appointment['service_id'],
-        master_id=appointment.get('master_id')
+        master_id=appointment.get('master_id'),
+        is_offer=is_offer,
+        duration=service.get('duration', 60)
     )
     
     # Set state to selecting date
     await state.set_state(BookingStates.selecting_date)
-    
-    # Show date selection keyboard
-    await callback.message.edit_text(
-        "Пожалуйста, выберите дату для новой записи:",
-        reply_markup=client_keyboards.get_date_keyboard()
-    )
     
     # Answer callback query
     await callback.answer()
@@ -799,12 +1023,18 @@ def register_handlers(dp: Dispatcher):
     dp.callback_query.register(view_master_info, F.data.startswith("master_"))
     dp.callback_query.register(book_with_master, F.data.startswith("book_with_master_"))
     
+    # Special offers handlers
+    dp.callback_query.register(offer_selected, F.data.startswith("offer_"))
+    dp.callback_query.register(skip_offers, F.data.startswith("skip_offers_"))
+    
+    # Category selection handlers
+    dp.callback_query.register(category_selected, F.data.startswith("category_"))
+    dp.callback_query.register(back_to_categories, F.data == "back_to_categories")
+    
     # Booking flow handlers
     dp.callback_query.register(service_selected, F.data.startswith("service_"))
     dp.callback_query.register(date_selected, F.data.startswith("date_"))
     dp.callback_query.register(time_selected, F.data.startswith("time_"))
-    dp.callback_query.register(payment_selected, F.data.startswith("payment_"))
-    dp.callback_query.register(back_to_confirmation, F.data.startswith("back_to_confirmation_"))
     dp.callback_query.register(booking_confirmed, F.data.startswith("confirm_"))
     dp.callback_query.register(booking_canceled, F.data == "cancel_booking")
     dp.callback_query.register(back_to_dates, F.data == "back_to_dates")
@@ -814,3 +1044,5 @@ def register_handlers(dp: Dispatcher):
     dp.callback_query.register(view_appointment, F.data.startswith("view_appointment_"))
     dp.callback_query.register(cancel_appointment, F.data.startswith("cancel_appointment_"))
     dp.callback_query.register(book_again, F.data.startswith("book_again_"))
+    dp.callback_query.register(expand_date_appointments, F.data.startswith("expand_date_"))
+    dp.callback_query.register(filter_appointments, F.data.startswith("filter_"))

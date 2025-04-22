@@ -5,6 +5,51 @@ from aiogram import types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, timedelta
 
+def get_services_by_category_keyboard(services_by_category):
+    """Generate an inline keyboard for services grouped by category"""
+    keyboard = InlineKeyboardBuilder()
+    
+    for category, services in services_by_category.items():
+        # Add category button
+        keyboard.button(
+            text=f"📂 {category}",
+            callback_data=f"category_{category}"
+        )
+    
+    # Add cancel button
+    keyboard.button(
+        text="❌ Отменить",
+        callback_data="cancel_booking"
+    )
+    
+    keyboard.adjust(1)  # One button per row
+    return keyboard.as_markup()
+
+def get_services_in_category_keyboard(services, category):
+    """Generate an inline keyboard for services in a specific category"""
+    keyboard = InlineKeyboardBuilder()
+    
+    for service in services:
+        keyboard.button(
+            text=f"{service['name']} - {service['price']}",
+            callback_data=f"service_{service['id']}"
+        )
+    
+    # Add back button
+    keyboard.button(
+        text="🔙 Назад к категориям",
+        callback_data="back_to_categories"
+    )
+    
+    # Add cancel button
+    keyboard.button(
+        text="❌ Отменить",
+        callback_data="cancel_booking"
+    )
+    
+    keyboard.adjust(1)  # One button per row
+    return keyboard.as_markup()
+
 def get_services_keyboard(services):
     """Generate an inline keyboard for available services"""
     keyboard = InlineKeyboardBuilder()
@@ -13,6 +58,13 @@ def get_services_keyboard(services):
             text=f"{service['name']} - {service['price']}",
             callback_data=f"service_{service['id']}"
         )
+    
+    # Add cancel button
+    keyboard.button(
+        text="❌ Отменить",
+        callback_data="cancel_booking"
+    )
+    
     keyboard.adjust(1)  # One button per row
     return keyboard.as_markup()
 
@@ -63,6 +115,31 @@ def get_master_info_keyboard(master):
     keyboard.button(
         text="🔙 Назад к списку мастеров",
         callback_data="view_masters"
+    )
+    
+    keyboard.adjust(1)  # One button per row
+    return keyboard.as_markup()
+
+def get_special_offers_keyboard(offers, master_id):
+    """Generate an inline keyboard for special offers"""
+    keyboard = InlineKeyboardBuilder()
+    
+    for offer in offers:
+        keyboard.button(
+            text=f"🎁 {offer['name']} - {offer['price']}",
+            callback_data=f"offer_{offer['id']}_{master_id}"
+        )
+    
+    # Add skip button
+    keyboard.button(
+        text="⏭️ Перейти к обычным услугам",
+        callback_data=f"skip_offers_{master_id}"
+    )
+    
+    # Add cancel button
+    keyboard.button(
+        text="❌ Отменить",
+        callback_data="cancel_booking"
     )
     
     keyboard.adjust(1)  # One button per row
@@ -165,70 +242,137 @@ def get_confirmation_keyboard(service_id, date, time, master_id=None):
     keyboard.adjust(1)  # One button per row
     return keyboard.as_markup()
 
-def get_payment_method_keyboard(service_id, date, time, master_id=None):
-    """Generate a keyboard for selecting payment method"""
+def get_appointments_keyboard(appointments):
+    """Generate an inline keyboard for user's appointments"""
     keyboard = InlineKeyboardBuilder()
     
-    # Create base callback data
-    base_data = f"{service_id}_{date}_{time}"
-    if master_id:
-        base_data += f"_{master_id}"
+    # Group appointments by date
+    appointments_by_date = {}
+    for appointment in appointments:
+        date = appointment.get('date')
+        if date not in appointments_by_date:
+            appointments_by_date[date] = []
+        appointments_by_date[date].append(appointment)
     
-    # Payment method buttons
+    # Sort dates
+    sorted_dates = sorted(appointments_by_date.keys())
+    
+    # Today's date
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    # Add appointments for today first if exists
+    if today in appointments_by_date:
+        keyboard.button(
+            text=f"📅 Сегодня ({today})",
+            callback_data=f"date_header_{today}"
+        )
+        
+        for appointment in appointments_by_date[today]:
+            status_text = {
+                'confirmed': '✅ Подтверждено',
+                'canceled': '❌ Отменено',
+                'completed': '✓ Выполнено',
+                'paid': '💰 Оплачено',
+                'pending': '⏳ Ожидает подтверждения'
+            }.get(appointment.get('status'), appointment.get('status', 'Неизвестно'))
+            
+            keyboard.button(
+                text=f"{appointment.get('time')} - {status_text}",
+                callback_data=f"view_appointment_{appointment.get('id')}"
+            )
+    
+    # Add other dates with collapsed appointments
+    for date in sorted_dates:
+        if date != today:
+            count = len(appointments_by_date[date])
+            keyboard.button(
+                text=f"📅 {date} ({count} записей)",
+                callback_data=f"expand_date_{date}"
+            )
+    
+    # Add buttons for filtering appointments
     keyboard.button(
-        text="💵 Наличные",
-        callback_data=f"payment_cash_{base_data}"
-    )
-    keyboard.button(
-        text="💳 Карта/Терминал",
-        callback_data=f"payment_card_{base_data}"
-    )
-    keyboard.button(
-        text="📲 Перевод",
-        callback_data=f"payment_transfer_{base_data}"
+        text="🔍 Активные записи",
+        callback_data="filter_active_appointments"
     )
     
-    # Back button
     keyboard.button(
-        text="⬅️ Назад",
-        callback_data=f"back_to_confirmation_{base_data}"
+        text="📜 Все записи",
+        callback_data="filter_all_appointments"
+    )
+    
+    keyboard.button(
+        text="📊 Последние 3 записи",
+        callback_data="filter_recent_appointments"
+    )
+    
+    # Add back to menu button
+    keyboard.button(
+        text="🔙 Вернуться в меню",
+        callback_data="back_to_menu"
     )
     
     keyboard.adjust(1)  # One button per row
     return keyboard.as_markup()
 
-def get_appointments_keyboard(appointments):
-    """Generate an inline keyboard for user's appointments"""
+def get_date_appointments_keyboard(appointments, date):
+    """Generate keyboard for appointments on a specific date"""
     keyboard = InlineKeyboardBuilder()
+    
+    keyboard.button(
+        text=f"📅 Записи на {date}:",
+        callback_data=f"date_header_{date}"
+    )
+    
     for appointment in appointments:
         status_text = {
             'confirmed': '✅ Подтверждено',
             'canceled': '❌ Отменено',
             'completed': '✓ Выполнено',
-            'paid': '💰 Оплачено'
+            'paid': '💰 Оплачено',
+            'pending': '⏳ Ожидает подтверждения'
         }.get(appointment.get('status'), appointment.get('status', 'Неизвестно'))
         
         keyboard.button(
-            text=f"#{appointment.get('id')} - {appointment.get('date')} {appointment.get('time')} - {status_text}",
+            text=f"{appointment.get('time')} - {status_text}",
             callback_data=f"view_appointment_{appointment.get('id')}"
         )
-        
-        # Add cancel button if appointment is not already canceled or completed
-        if appointment.get('status') not in ['canceled', 'completed', 'paid']:
-            keyboard.button(
-                text=f"❌ Отменить запись #{appointment.get('id')}",
-                callback_data=f"cancel_appointment_{appointment.get('id')}"
-            )
-            
-            # Add "book again" button
-            keyboard.button(
-                text=f"🔄 Записаться снова",
-                callback_data=f"book_again_{appointment.get('id')}"
-            )
     
-    # Add back to menu button
+    # Add back button
     keyboard.button(
-        text="🔙 Вернуться в меню",
+        text="🔙 Назад к списку дат",
+        callback_data="view_my_appointments"
+    )
+    
+    keyboard.adjust(1)  # One button per row
+    return keyboard.as_markup()
+
+def get_appointment_actions_keyboard(appointment):
+    """Generate a keyboard for appointment actions"""
+    keyboard = InlineKeyboardBuilder()
+    
+    # Add cancel button if appointment is not already canceled or completed
+    if appointment.get('status') not in ['canceled', 'completed', 'paid']:
+        keyboard.button(
+            text=f"❌ Отменить запись",
+            callback_data=f"cancel_appointment_{appointment.get('id')}"
+        )
+    
+    # Add "book again" button
+    keyboard.button(
+        text=f"🔄 Записаться снова",
+        callback_data=f"book_again_{appointment.get('id')}"
+    )
+    
+    # Add back button
+    keyboard.button(
+        text="🔙 Назад к списку записей",
+        callback_data="view_my_appointments"
+    )
+    
+    # Add main menu button
+    keyboard.button(
+        text="🏠 Главное меню",
         callback_data="back_to_menu"
     )
     
