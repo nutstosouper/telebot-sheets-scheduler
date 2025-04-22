@@ -2,6 +2,31 @@
 from utils.db_api.google_sheets import sheet, setup
 from datetime import datetime
 
+def standardize_appointment(appointment):
+    """Standardize appointment keys to lowercase without spaces"""
+    standardized = {}
+    # Map from possible variants to standardized keys
+    key_mapping = {
+        'id': 'id',
+        'Appointment ID': 'id',
+        'user_id': 'user_id',
+        'User ID': 'user_id',
+        'service_id': 'service_id',
+        'Service ID': 'service_id',
+        'date': 'date',
+        'Date': 'date',
+        'time': 'time',
+        'Time': 'time',
+        'status': 'status',
+        'Status': 'status'
+    }
+    
+    for key, value in appointment.items():
+        if key in key_mapping:
+            standardized[key_mapping[key]] = value
+    
+    return standardized
+
 async def get_user_appointments(user_id):
     """Get all appointments for a specific user"""
     global sheet
@@ -16,12 +41,27 @@ async def get_user_appointments(user_id):
         appointments_sheet = sheet.worksheet('Appointments')
         # Get all records
         records = appointments_sheet.get_all_records()
-        # Filter records for the specific user
-        user_appointments = [
-            appointment for appointment in records 
-            if str(appointment.get('user_id', '')) == str(user_id)
-        ]
-        return user_appointments
+        
+        # Debug information
+        if records:
+            print(f"Looking for appointments for user_id: {user_id}, type: {type(user_id)}")
+            first_record = records[0]
+            print(f"First appointment record: {first_record}")
+            
+            # Standardize records
+            standardized_records = [standardize_appointment(record) for record in records]
+            
+            # Filter records for the specific user
+            user_appointments = []
+            for appointment in standardized_records:
+                appt_user_id = appointment.get('user_id')
+                # Convert both to string for comparison to avoid type issues
+                if str(appt_user_id) == str(user_id):
+                    user_appointments.append(appointment)
+            
+            print(f"Found {len(user_appointments)} appointments for user {user_id}")
+            return user_appointments
+        return []
     except Exception as e:
         print(f"Error getting appointments: {e}")
         return []
@@ -40,7 +80,10 @@ async def get_all_appointments():
         appointments_sheet = sheet.worksheet('Appointments')
         # Get all records except header
         records = appointments_sheet.get_all_records()
-        return records
+        
+        # Standardize all records
+        standardized_records = [standardize_appointment(record) for record in records]
+        return standardized_records
     except Exception as e:
         print(f"Error getting all appointments: {e}")
         return []
@@ -124,9 +167,11 @@ async def update_appointment_status(appointment_id, new_status):
         # Find the appointment by ID
         cell = appointments_sheet.find(str(appointment_id), in_column=1)
         if not cell:
+            print(f"Appointment {appointment_id} not found")
             return False
         
         # Update the status (column 6)
+        print(f"Updating appointment {appointment_id} status to {new_status}")
         appointments_sheet.update_cell(cell.row, 6, new_status)
         return True
     except Exception as e:
@@ -152,6 +197,12 @@ async def get_appointment(appointment_id):
         
         # Get the row values
         row = appointments_sheet.row_values(cell.row)
+        
+        # Check that we have enough values
+        if len(row) < 6:
+            print(f"Warning: Appointment {appointment_id} has incomplete data: {row}")
+            return None
+            
         return {
             'id': row[0],
             'user_id': row[1],
@@ -163,3 +214,32 @@ async def get_appointment(appointment_id):
     except Exception as e:
         print(f"Error getting appointment: {e}")
         return None
+
+# Debug function for tracing appointment issues
+async def debug_appointment_data():
+    """Print debug information about appointments"""
+    global sheet
+    if sheet is None:
+        sheet = await setup()
+        
+    try:
+        appointments_sheet = sheet.worksheet('Appointments')
+        records = appointments_sheet.get_all_records()
+        
+        print("==== DEBUG: APPOINTMENT DATA ====")
+        print(f"Total records: {len(records)}")
+        if records:
+            print(f"First record keys: {list(records[0].keys())}")
+            print(f"First record: {records[0]}")
+            
+            # Test standardization
+            std_record = standardize_appointment(records[0])
+            print(f"Standardized first record: {std_record}")
+        else:
+            print("No appointment records found")
+        print("=================================")
+        
+        return records
+    except Exception as e:
+        print(f"Error debugging appointments: {e}")
+        return []

@@ -119,10 +119,17 @@ def get_all_appointments_keyboard(appointments):
     """Generate a keyboard displaying all appointments"""
     keyboard = InlineKeyboardBuilder()
     for appointment in appointments:
-        keyboard.button(
-            text=f"ID: {appointment['id']} - {appointment['date']} {appointment['time']} - {appointment['status']}", 
-            callback_data=f"admin_view_appointment_{appointment['id']}"
-        )
+        # Ensure we're using standardized keys
+        appt_id = appointment.get('id')
+        date = appointment.get('date')
+        time = appointment.get('time')
+        status = appointment.get('status')
+        
+        if appt_id and date and time and status:
+            keyboard.button(
+                text=f"ID: {appt_id} - {date} {time} - {status}", 
+                callback_data=f"admin_view_appointment_{appt_id}"
+            )
     
     keyboard.button(
         text="🔙 Back to Admin Panel", 

@@ -1,6 +1,33 @@
 
 from utils.db_api.google_sheets import sheet, setup
 
+def standardize_service(service):
+    """Standardize service keys to lowercase without spaces"""
+    standardized = {}
+    # Map from possible variants to standardized keys
+    key_mapping = {
+        'id': 'id',
+        'Service ID': 'id',
+        'name': 'name',
+        'Name': 'name',
+        'description': 'description',
+        'Description': 'description',
+        'price': 'price',
+        'Price': 'price',
+        'duration': 'duration',
+        'Duration': 'duration'
+    }
+    
+    for key, value in service.items():
+        if key in key_mapping:
+            standardized[key_mapping[key]] = value
+    
+    # Set default duration if not present
+    if 'duration' not in standardized:
+        standardized['duration'] = '60'
+        
+    return standardized
+
 async def get_all_services():
     """Get all available services"""
     global sheet
@@ -15,12 +42,19 @@ async def get_all_services():
         services_sheet = sheet.worksheet('Services')
         # Get all records except header
         records = services_sheet.get_all_records()
-        return records
+        
+        # Debug info
+        if records and len(records) > 0:
+            print(f"Service record keys: {list(records[0].keys())}")
+        
+        # Standardize all records
+        standardized_services = [standardize_service(record) for record in records]
+        return standardized_services
     except Exception as e:
         print(f"Error getting services: {e}")
         return []
 
-async def add_service(name, description, price):
+async def add_service(name, description, price, duration=60):
     """Add a new service"""
     global sheet
     # Ensure sheet is initialized
@@ -39,12 +73,16 @@ async def add_service(name, description, price):
             # Find the maximum ID and increment by 1
             next_id = max(int(service.get('id', 0)) for service in services) + 1
         
+        # Convert duration to string
+        duration_str = str(duration)
+        
         # Add the new service
         services_sheet.append_row([
             str(next_id),
             name,
             description,
-            str(price)
+            str(price),
+            duration_str
         ])
         
         # Return the newly created service
@@ -52,7 +90,8 @@ async def add_service(name, description, price):
             'id': next_id,
             'name': name,
             'description': description,
-            'price': price
+            'price': price,
+            'duration': duration_str
         }
     except Exception as e:
         print(f"Error adding service: {e}")
@@ -80,7 +119,7 @@ async def delete_service(service_id):
         print(f"Error deleting service: {e}")
         return False
 
-async def update_service(service_id, name=None, description=None, price=None):
+async def update_service(service_id, name=None, description=None, price=None, duration=None):
     """Update service details"""
     global sheet
     # Ensure sheet is initialized
@@ -104,8 +143,51 @@ async def update_service(service_id, name=None, description=None, price=None):
             services_sheet.update_cell(row, 3, description)
         if price is not None:
             services_sheet.update_cell(row, 4, str(price))
+        if duration is not None:
+            services_sheet.update_cell(row, 5, str(duration))
         
         return True
     except Exception as e:
         print(f"Error updating service: {e}")
         return False
+
+async def get_service(service_id):
+    """Get service by ID"""
+    global sheet
+    # Ensure sheet is initialized
+    if sheet is None:
+        sheet = await setup()
+        if sheet is None:
+            print(f"Error getting service: sheet is not initialized")
+            return None
+    
+    try:
+        services_sheet = sheet.worksheet('Services')
+        # Find the service by ID
+        cell = services_sheet.find(str(service_id), in_column=1)
+        if not cell:
+            return None
+        
+        # Get the row values
+        row = services_sheet.row_values(cell.row)
+        
+        # Check that we have enough values
+        if len(row) < 4:
+            print(f"Warning: Service {service_id} has incomplete data: {row}")
+            return None
+        
+        # Set default duration if not present
+        duration = "60"
+        if len(row) >= 5:
+            duration = row[4]
+            
+        return {
+            'id': row[0],
+            'name': row[1],
+            'description': row[2],
+            'price': row[3],
+            'duration': duration
+        }
+    except Exception as e:
+        print(f"Error getting service: {e}")
+        return None

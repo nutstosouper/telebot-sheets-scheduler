@@ -5,3 +5,4 @@ from utils.db_api import google_sheets
 from utils.db_api import user_commands
 from utils.db_api import service_commands
 from utils.db_api import appointment_commands
+from utils.db_api import master_commands
