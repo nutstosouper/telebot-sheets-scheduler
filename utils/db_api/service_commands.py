@@ -191,3 +191,9 @@ async def get_service(service_id):
     except Exception as e:
         print(f"Error getting service: {e}")
         return None
+
+async def get_services_by_master(master_id):
+    """Get services offered by a specific master"""
+    # In the current implementation, all masters offer all services
+    # This can be extended in the future to support master-specific services
+    return await get_all_services()
