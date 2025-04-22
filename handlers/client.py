@@ -1020,7 +1020,7 @@ def register_handlers(dp: Dispatcher):
     
     # Master selection handlers
     dp.callback_query.register(master_selected, F.data.startswith("master_"))
-    dp.callback_query.register(view_master_info, F.data.startswith("master_"))
+    dp.callback_query.register(view_master_info, F.data.startswith("master_info_"))
     dp.callback_query.register(book_with_master, F.data.startswith("book_with_master_"))
     
     # Special offers handlers

@@ -243,7 +243,7 @@ def get_confirmation_keyboard(service_id, date, time, master_id=None):
     return keyboard.as_markup()
 
 def get_appointments_keyboard(appointments):
-    """Generate an inline keyboard for user's appointments"""
+    """Generate an inline keyboard for user's appointments, grouped by date"""
     keyboard = InlineKeyboardBuilder()
     
     # Group appointments by date
@@ -268,6 +268,7 @@ def get_appointments_keyboard(appointments):
         )
         
         for appointment in appointments_by_date[today]:
+            service_name = appointment.get('service_name', 'Услуга')
             status_text = {
                 'confirmed': '✅ Подтверждено',
                 'canceled': '❌ Отменено',
@@ -277,7 +278,7 @@ def get_appointments_keyboard(appointments):
             }.get(appointment.get('status'), appointment.get('status', 'Неизвестно'))
             
             keyboard.button(
-                text=f"{appointment.get('time')} - {status_text}",
+                text=f"{appointment.get('time')} - {service_name} - {status_text}",
                 callback_data=f"view_appointment_{appointment.get('id')}"
             )
     
@@ -290,20 +291,20 @@ def get_appointments_keyboard(appointments):
                 callback_data=f"expand_date_{date}"
             )
     
-    # Add buttons for filtering appointments
+    # Add filter buttons
     keyboard.button(
         text="🔍 Активные записи",
-        callback_data="filter_active_appointments"
+        callback_data="filter_active"
     )
     
     keyboard.button(
         text="📜 Все записи",
-        callback_data="filter_all_appointments"
+        callback_data="filter_all"
     )
     
     keyboard.button(
         text="📊 Последние 3 записи",
-        callback_data="filter_recent_appointments"
+        callback_data="filter_recent"
     )
     
     # Add back to menu button
@@ -319,12 +320,15 @@ def get_date_appointments_keyboard(appointments, date):
     """Generate keyboard for appointments on a specific date"""
     keyboard = InlineKeyboardBuilder()
     
+    # Add header for date
     keyboard.button(
         text=f"📅 Записи на {date}:",
         callback_data=f"date_header_{date}"
     )
     
+    # Add each appointment
     for appointment in appointments:
+        service_name = appointment.get('service_name', 'Услуга')
         status_text = {
             'confirmed': '✅ Подтверждено',
             'canceled': '❌ Отменено',
@@ -334,7 +338,7 @@ def get_date_appointments_keyboard(appointments, date):
         }.get(appointment.get('status'), appointment.get('status', 'Неизвестно'))
         
         keyboard.button(
-            text=f"{appointment.get('time')} - {status_text}",
+            text=f"{appointment.get('time')} - {service_name} - {status_text}",
             callback_data=f"view_appointment_{appointment.get('id')}"
         )
     

@@ -91,7 +91,7 @@ async def add_appointment(user_id, service_id, date, time, master_id=None, payme
     if master_id:
         new_appointment['master_id'] = master_id
     
-    # Add payment_method if provided
+    # Add payment_method if provided (только администратор может установить)
     if payment_method:
         new_appointment['payment_method'] = payment_method
     
@@ -197,3 +197,39 @@ async def get_appointments_statistics(master_id=None, start_date=None, end_date=
         'canceled_count': canceled_count,
         'revenue': revenue
     }
+
+# Группировка записей по датам
+async def get_appointments_grouped_by_date(user_id=None, master_id=None):
+    """Get appointments grouped by date"""
+    appointments = await get_all_appointments()
+    
+    # Filter appointments by user or master if provided
+    if user_id:
+        appointments = [a for a in appointments if str(a.get('user_id')) == str(user_id)]
+    if master_id:
+        appointments = [a for a in appointments if a.get('master_id') == master_id]
+    
+    # Group appointments by date
+    grouped = {}
+    for appointment in appointments:
+        date = appointment.get('date')
+        if date not in grouped:
+            grouped[date] = []
+        
+        # Добавляем информацию об услуге и мастере
+        service_id = appointment.get('service_id')
+        if service_id:
+            service = await get_service(service_id)
+            if service:
+                appointment['service_name'] = service.get('name')
+                appointment['service_price'] = service.get('price')
+        
+        master_id = appointment.get('master_id')
+        if master_id:
+            master = await get_master(master_id)
+            if master:
+                appointment['master_name'] = master.get('name')
+        
+        grouped[date].append(appointment)
+    
+    return grouped
