@@ -503,27 +503,8 @@ async def edit_offer_name(message: Message, state: FSMContext):
     # Clear state
     await state.clear()
 
-# ... similar handlers for other offer fields (description, price, duration)
-
-async def delete_offer_confirm(callback: CallbackQuery, role: str):
-    """Confirm offer deletion"""
-    # Check if user has admin or ceo role
-    if role not in ["admin", "ceo"]:
-        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
-        return
-    
-    # Extract offer ID from callback data
-    offer_id = callback.data.split('_')[2]
-    
-    await callback.message.edit_text(
-        "Вы уверены, что хотите удалить это специальное предложение?",
-        reply_markup=admin_keyboards.get_confirm_delete_keyboard(offer_id, "offer")
-    )
-    
-    await callback.answer()
-
-async def delete_offer(callback: CallbackQuery, role: str):
-    """Handle offer deletion"""
+async def edit_offer_description_start(callback: CallbackQuery, state: FSMContext, role: str):
+    """Start editing offer description"""
     # Check if user has admin or ceo role
     if role not in ["admin", "ceo"]:
         await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
@@ -532,21 +513,144 @@ async def delete_offer(callback: CallbackQuery, role: str):
     # Extract offer ID from callback data
     offer_id = callback.data.split('_')[3]
     
-    # Delete the offer
-    success = await service_commands.delete_offer(offer_id)
+    # Save offer ID in state
+    await state.update_data(offer_id=offer_id)
+    
+    # Set state to editing description
+    await state.set_state(AdminOfferStates.editing_description)
+    
+    await callback.message.edit_text(
+        "Пожалуйста, введите новое описание для специального предложения:"
+    )
+    
+    await callback.answer()
+
+async def edit_offer_description(message: Message, state: FSMContext):
+    """Handle updating offer description"""
+    # Get offer ID from state
+    data = await state.get_data()
+    offer_id = data["offer_id"]
+    
+    # Update the offer description
+    success = await service_commands.update_offer(offer_id, description=message.text)
     
     if success:
-        await callback.message.edit_text(
-            "✅ Специальное предложение успешно удалено!",
+        await message.answer(
+            f"✅ Описание спец. предложения обновлено: {message.text}",
             reply_markup=admin_keyboards.get_back_to_admin_keyboard()
         )
     else:
-        await callback.message.edit_text(
-            "❌ Не удалось удалить специальное предложение. Пожалуйста, попробуйте еще раз позже.",
+        await message.answer(
+            "❌ Не удалось обновить описание спец. предложения. Пожалуйста, попробуйте еще раз позже.",
             reply_markup=admin_keyboards.get_back_to_admin_keyboard()
         )
     
+    # Clear state
+    await state.clear()
+
+async def edit_offer_price_start(callback: CallbackQuery, state: FSMContext, role: str):
+    """Start editing offer price"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract offer ID from callback data
+    offer_id = callback.data.split('_')[3]
+    
+    # Save offer ID in state
+    await state.update_data(offer_id=offer_id)
+    
+    # Set state to editing price
+    await state.set_state(AdminOfferStates.editing_price)
+    
+    await callback.message.edit_text(
+        "Пожалуйста, введите новую цену для специального предложения:"
+    )
+    
     await callback.answer()
+
+async def edit_offer_price(message: Message, state: FSMContext):
+    """Handle updating offer price"""
+    # Validate price
+    try:
+        price = float(message.text)
+    except ValueError:
+        await message.answer("Неверный формат цены. Пожалуйста, введите число.")
+        return
+    
+    # Get offer ID from state
+    data = await state.get_data()
+    offer_id = data["offer_id"]
+    
+    # Update the offer price
+    success = await service_commands.update_offer(offer_id, price=price)
+    
+    if success:
+        await message.answer(
+            f"✅ Цена спец. предложения обновлена: {price}",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    else:
+        await message.answer(
+            "❌ Не удалось обновить цену спец. предложения. Пожалуйста, попробуйте еще раз позже.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    
+    # Clear state
+    await state.clear()
+
+async def edit_offer_duration_start(callback: CallbackQuery, state: FSMContext, role: str):
+    """Start editing offer duration"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract offer ID from callback data
+    offer_id = callback.data.split('_')[3]
+    
+    # Save offer ID in state
+    await state.update_data(offer_id=offer_id)
+    
+    # Set state to editing duration
+    await state.set_state(AdminOfferStates.editing_duration)
+    
+    await callback.message.edit_text(
+        "Пожалуйста, введите новую продолжительность для специального предложения (в минутах):"
+    )
+    
+    await callback.answer()
+
+async def edit_offer_duration(message: Message, state: FSMContext):
+    """Handle updating offer duration"""
+    # Validate duration
+    try:
+        duration = int(message.text)
+    except ValueError:
+        await message.answer("Неверный формат продолжительности. Пожалуйста, введите целое число.")
+        return
+    
+    # Get offer ID from state
+    data = await state.get_data()
+    offer_id = data["offer_id"]
+    
+    # Update the offer duration
+    success = await service_commands.update_offer(offer_id, duration=duration)
+    
+    if success:
+        await message.answer(
+            f"✅ Продолжительность спец. предложения обновлена: {duration} минут",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    else:
+        await message.answer(
+            "❌ Не удалось обновить продолжительность спец. предложения. Пожалуйста, попробуйте еще раз позже.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    
+    # Clear state
+    await state.clear()
 
 # Adding functionality for user verification
 async def admin_view_appointment(callback: CallbackQuery, role: str, bot: Bot):
@@ -1036,6 +1140,12 @@ def register_handlers(dp: Dispatcher):
     dp.callback_query.register(edit_offer, F.data.startswith("edit_offer_"))
     dp.callback_query.register(edit_offer_name_start, F.data.startswith("edit_offer_name_"))
     dp.message.register(edit_offer_name, AdminOfferStates.editing_name)
+    dp.callback_query.register(edit_offer_description_start, F.data.startswith("edit_offer_description_"))
+    dp.message.register(edit_offer_description, AdminOfferStates.editing_description)
+    dp.callback_query.register(edit_offer_price_start, F.data.startswith("edit_offer_price_"))
+    dp.message.register(edit_offer_price, AdminOfferStates.editing_price)
+    dp.callback_query.register(edit_offer_duration_start, F.data.startswith("edit_offer_duration_"))
+    dp.message.register(edit_offer_duration, AdminOfferStates.editing_duration)
     dp.callback_query.register(delete_offer_confirm, F.data.startswith("delete_offer_confirm_"))
     dp.callback_query.register(delete_offer, F.data.startswith("confirm_delete_offer_"))
     

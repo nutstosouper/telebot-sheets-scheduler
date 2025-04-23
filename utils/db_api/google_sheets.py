@@ -149,4 +149,3 @@ async def write_to_sheet(sheet_name, data):
     except Exception as e:
         logging.error(f"Error writing to sheet {sheet_name}: {str(e)}")
         return False
-

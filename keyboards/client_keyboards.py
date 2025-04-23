@@ -1,4 +1,3 @@
-
 # This file contains keyboard layouts for client interactions in the Telegram bot
 
 from aiogram import types
@@ -12,7 +11,7 @@ def get_services_by_category_keyboard(services_by_category):
     for category, services in services_by_category.items():
         # Add category button
         keyboard.button(
-            text=f"📂 {category}",
+            text=f"📂 {category} ({len(services)})",
             callback_data=f"category_{category}"
         )
     
@@ -358,7 +357,7 @@ def get_appointment_actions_keyboard(appointment):
     # Add cancel button if appointment is not already canceled or completed
     if appointment.get('status') not in ['canceled', 'completed', 'paid']:
         keyboard.button(
-            text=f"❌ Отменить запись",
+            text=f"❌ От��енить запись",
             callback_data=f"cancel_appointment_{appointment.get('id')}"
         )
     
