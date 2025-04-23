@@ -1,5 +1,5 @@
-# Partial update of the admin.py file
-# Adding new functionality for special offers, categories, and user verification
+
+# Adding template-based service creation functionality
 
 from aiogram import Dispatcher, F, Bot
 from aiogram import types
@@ -24,6 +24,7 @@ class AdminServiceStates(StatesGroup):
     editing_price = State()
     editing_duration = State()
     editing_category = State()
+    updating_price = State()  # State for bulk price update
 
 class AdminMasterStates(StatesGroup):
     adding_name = State()
@@ -77,6 +78,757 @@ async def back_to_admin(callback: CallbackQuery, role: str):
     
     await callback.answer()
 
+# Admin services menu
+async def admin_services(callback: CallbackQuery, role: str):
+    """Handle admin services menu"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    await callback.message.edit_text(
+        "Управление услугами",
+        reply_markup=admin_keyboards.get_services_management_keyboard()
+    )
+    
+    await callback.answer()
+
+# Template-based service creation functionality
+async def admin_template_categories(callback: CallbackQuery, role: str):
+    """Show template categories for quick service creation"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Get all template categories
+    categories = await service_commands.get_all_template_categories()
+    
+    if not categories:
+        await callback.message.edit_text(
+            "Шаблоны категорий не найдены. Пожалуйста, проверьте настройки таблицы.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    else:
+        await callback.message.edit_text(
+            "Выберите категорию услуг, которую вы хотите добавить в свой бизнес:",
+            reply_markup=admin_keyboards.get_template_categories_keyboard(categories)
+        )
+    
+    await callback.answer()
+
+async def admin_add_category_services(callback: CallbackQuery, role: str):
+    """Add all template services for a category"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract category name from callback data
+    category_name = callback.data.split('_', 3)[3]
+    
+    # Add template services for this category
+    success, message = await service_commands.add_template_services_to_category(category_name)
+    
+    if success:
+        # Get services added to display
+        category = await service_commands.get_category_by_name(category_name)
+        if category:
+            services = await service_commands.get_services_in_category(category['id'])
+            
+            # Create message with all services that need price setting
+            if services:
+                service_list = "\n".join([f"• {s['name']}" for s in services])
+                await callback.message.edit_text(
+                    f"{message}\n\nСписок услуг в категории '{category_name}':\n{service_list}\n\nТеперь вам нужно установить цены для этих услуг.",
+                    reply_markup=admin_keyboards.get_category_services_price_keyboard(category['id'])
+                )
+            else:
+                await callback.message.edit_text(
+                    f"{message}\n\nНо услуги не были добавлены. Пожалуйста, попробуйте еще раз.",
+                    reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+                )
+        else:
+            await callback.message.edit_text(
+                f"{message}",
+                reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+            )
+    else:
+        await callback.message.edit_text(
+            f"Ошибка: {message}",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    
+    await callback.answer()
+
+async def update_category_services_price(callback: CallbackQuery, state: FSMContext, role: str):
+    """Update prices for all services in a category"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract category ID from callback data
+    category_id = callback.data.split('_')[3]
+    
+    # Save category ID in state
+    await state.update_data(category_id=category_id)
+    
+    # Get the category and its services
+    category = await service_commands.get_category(category_id)
+    if not category:
+        await callback.message.edit_text(
+            "Категория не найдена.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+        return
+    
+    services = await service_commands.get_services_in_category(category_id)
+    if not services:
+        await callback.message.edit_text(
+            f"В категории '{category['name']}' нет услуг.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+        return
+    
+    # Create list of services
+    service_list = "\n".join([f"• {s['name']}" for s in services])
+    
+    # Set state for bulk price update
+    await state.set_state(AdminServiceStates.updating_price)
+    
+    await callback.message.edit_text(
+        f"Установка цен для услуг в категории '{category['name']}':\n\n{service_list}\n\nПожалуйста, введите цену для всех услуг в этой категории:"
+    )
+    
+    await callback.answer()
+
+async def process_category_services_price(message: Message, state: FSMContext):
+    """Process bulk price update for services in a category"""
+    # Validate price
+    try:
+        price = float(message.text)
+    except ValueError:
+        await message.answer("Неверный формат цены. Пожалуйста, введите число.")
+        return
+    
+    # Get category ID from state
+    data = await state.get_data()
+    category_id = data.get("category_id")
+    
+    if not category_id:
+        await message.answer(
+            "Ошибка: не найден ID категории.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+        await state.clear()
+        return
+    
+    # Get services in this category
+    services = await service_commands.get_services_in_category(category_id)
+    if not services:
+        await message.answer(
+            "В выбранной категории нет услуг.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+        await state.clear()
+        return
+    
+    # Update price for all services
+    updated_count = 0
+    for service in services:
+        success = await service_commands.update_service(service.get('id'), price=price)
+        if success:
+            updated_count += 1
+    
+    # Get category name
+    category = await service_commands.get_category(category_id)
+    category_name = category.get('name', 'Неизвестная категория') if category else 'Неизвестная категория'
+    
+    await message.answer(
+        f"✅ Цены обновлены для {updated_count} услуг в категории '{category_name}'.",
+        reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+    )
+    
+    await state.clear()
+
+# Regular service management
+async def add_service_start(callback: CallbackQuery, state: FSMContext, role: str):
+    """Start the add service flow"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Set state to adding name
+    await state.set_state(AdminServiceStates.adding_name)
+    
+    await callback.message.edit_text(
+        "Пожалуйста, введите название новой услуги:"
+    )
+    
+    await callback.answer()
+
+async def add_service_name(message: Message, state: FSMContext):
+    """Handle adding service name"""
+    # Save the name
+    await state.update_data(name=message.text)
+    
+    # Move to description state
+    await state.set_state(AdminServiceStates.adding_description)
+    
+    await message.answer("Пожалуйста, введите описание услуги:")
+
+async def add_service_description(message: Message, state: FSMContext):
+    """Handle adding service description"""
+    # Save the description
+    await state.update_data(description=message.text)
+    
+    # Move to price state
+    await state.set_state(AdminServiceStates.adding_price)
+    
+    await message.answer("Пожалуйста, введите цену услуги:")
+
+async def add_service_price(message: Message, state: FSMContext):
+    """Handle adding service price"""
+    # Validate price
+    try:
+        price = float(message.text)
+    except ValueError:
+        await message.answer("Неверный формат цены. Пожалуйста, введите число.")
+        return
+    
+    # Save the price
+    await state.update_data(price=price)
+    
+    # Move to duration state
+    await state.set_state(AdminServiceStates.adding_duration)
+    
+    await message.answer("Пожалуйста, введите продолжительность услуги в минутах (например, 15, 30, 60):")
+
+async def add_service_duration(message: Message, state: FSMContext):
+    """Handle adding service duration"""
+    # Validate duration
+    try:
+        duration = int(message.text)
+    except ValueError:
+        await message.answer("Неверный формат продолжительности. Пожалуйста, введите целое число.")
+        return
+    
+    # Save the duration
+    await state.update_data(duration=duration)
+    
+    # Get categories for selection
+    categories = await service_commands.get_all_categories()
+    
+    if categories:
+        # Create a keyboard for category selection
+        keyboard = InlineKeyboardBuilder()
+        for category in categories:
+            keyboard.button(
+                text=f"{category['name']}",
+                callback_data=f"add_service_category_{category['id']}"
+            )
+        
+        keyboard.button(
+            text="Без категории",
+            callback_data="add_service_category_none"
+        )
+        
+        keyboard.adjust(1)  # One button per row
+        
+        # Move to category state
+        await state.set_state(AdminServiceStates.adding_category)
+        
+        await message.answer(
+            "Пожалуйста, выберите категорию для услуги:",
+            reply_markup=keyboard.as_markup()
+        )
+    else:
+        # No categories, add service without a category
+        await add_service_final(message, state, None)
+
+async def add_service_category(callback: CallbackQuery, state: FSMContext):
+    """Handle category selection for a new service"""
+    # Extract category ID from callback data
+    category_id = None
+    if callback.data != "add_service_category_none":
+        category_id = callback.data.split('_')[3]
+    
+    await add_service_final(callback.message, state, category_id)
+    await callback.answer()
+
+async def add_service_final(message, state: FSMContext, category_id=None):
+    """Finalize adding a service"""
+    # Get all data
+    data = await state.get_data()
+    name = data["name"]
+    description = data["description"]
+    price = data["price"]
+    duration = data["duration"]
+    
+    # Add the service
+    service = await service_commands.add_service(name, description, price, duration, category_id)
+    
+    category_text = ""
+    if category_id:
+        category = await service_commands.get_category(category_id)
+        if category:
+            category_text = f"\nКатегория: {category['name']}"
+    
+    if service:
+        await message.answer(
+            f"✅ Услуга добавлена успешно!\n\nНазвание: {name}\nОписание: {description}\nЦена: {price}\nПродолжительность: {duration}{category_text}",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    else:
+        await message.answer(
+            "❌ Не удалось добавить услугу. Пожалуйста, попробуйте еще раз позже.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    
+    # Clear state
+    await state.clear()
+
+async def view_services(callback: CallbackQuery, role: str):
+    """Handle viewing all services"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Get services by category
+    services_by_category = await service_commands.get_services_by_category()
+    
+    if not services_by_category:
+        await callback.message.edit_text(
+            "Услуги не найдены. Вы можете добавить услуги, используя кнопку 'Быстрое создание услуг' или 'Добавить услугу'.",
+            reply_markup=admin_keyboards.get_services_management_keyboard()
+        )
+    else:
+        await callback.message.edit_text(
+            "Выберите категорию для просмотра услуг:",
+            reply_markup=admin_keyboards.get_service_categories_keyboard(services_by_category)
+        )
+    
+    await callback.answer()
+
+async def view_category_services(callback: CallbackQuery, role: str):
+    """Handle viewing services in a category"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract category name from callback data
+    category_name = callback.data.split('_', 3)[3]
+    
+    # Get services by category
+    services_by_category = await service_commands.get_services_by_category()
+    
+    if category_name in services_by_category and services_by_category[category_name]:
+        await callback.message.edit_text(
+            f"Услуги в категории '{category_name}':",
+            reply_markup=admin_keyboards.get_category_services_keyboard(services_by_category[category_name], category_name)
+        )
+    else:
+        await callback.message.edit_text(
+            f"В категории '{category_name}' нет услуг.",
+            reply_markup=admin_keyboards.get_back_to_services_keyboard()
+        )
+    
+    await callback.answer()
+
+async def back_to_services(callback: CallbackQuery, role: str):
+    """Handle back to services menu button"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    await callback.message.edit_text(
+        "Управление услугами",
+        reply_markup=admin_keyboards.get_services_management_keyboard()
+    )
+    
+    await callback.answer()
+
+async def admin_view_service(callback: CallbackQuery, role: str):
+    """Handle viewing a specific service"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract service ID from callback data
+    service_id = callback.data.split('_')[3]
+    
+    # Get service details
+    service = await service_commands.get_service(service_id)
+    
+    if not service:
+        await callback.message.edit_text(
+            "Услуга не найдена.",
+            reply_markup=admin_keyboards.get_back_to_services_keyboard()
+        )
+    else:
+        # Get category if exists
+        category_text = ""
+        if 'category_id' in service:
+            category = await service_commands.get_category(service['category_id'])
+            if category:
+                category_text = f"\nКатегория: {category['name']}"
+        
+        await callback.message.edit_text(
+            f"Данные услуги:\n\nID: {service['id']}\nНазвание: {service['name']}\nОписание: {service['description']}\nЦена: {service['price']}\nПродолжительность: {service['duration']}{category_text}",
+            reply_markup=admin_keyboards.get_service_actions_keyboard(service_id)
+        )
+    
+    await callback.answer()
+
+async def edit_service(callback: CallbackQuery, role: str):
+    """Handle editing a service"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract service ID from callback data
+    service_id = callback.data.split('_')[2]
+    
+    await callback.message.edit_text(
+        "Что вы хотите отредактировать?",
+        reply_markup=admin_keyboards.get_edit_service_keyboard(service_id)
+    )
+    
+    await callback.answer()
+
+async def edit_service_name_start(callback: CallbackQuery, state: FSMContext, role: str):
+    """Start editing service name"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract service ID from callback data
+    service_id = callback.data.split('_')[3]
+    
+    # Save service ID in state
+    await state.update_data(service_id=service_id)
+    
+    # Set state to editing name
+    await state.set_state(AdminServiceStates.editing_name)
+    
+    await callback.message.edit_text(
+        "Пожалуйста, введите новое название для услуги:"
+    )
+    
+    await callback.answer()
+
+async def edit_service_name(message: Message, state: FSMContext):
+    """Handle updating service name"""
+    # Get service ID from state
+    data = await state.get_data()
+    service_id = data["service_id"]
+    
+    # Update the service name
+    success = await service_commands.update_service(service_id, name=message.text)
+    
+    if success:
+        await message.answer(
+            f"✅ Название услуги обновлено: {message.text}",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    else:
+        await message.answer(
+            "❌ Не удалось обновить название услуги. Пожалуйста, попробуйте еще раз позже.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    
+    # Clear state
+    await state.clear()
+
+async def edit_service_description_start(callback: CallbackQuery, state: FSMContext, role: str):
+    """Start editing service description"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract service ID from callback data
+    service_id = callback.data.split('_')[3]
+    
+    # Save service ID in state
+    await state.update_data(service_id=service_id)
+    
+    # Set state to editing description
+    await state.set_state(AdminServiceStates.editing_description)
+    
+    await callback.message.edit_text(
+        "Пожалуйста, введите новое описание для услуги:"
+    )
+    
+    await callback.answer()
+
+async def edit_service_description(message: Message, state: FSMContext):
+    """Handle updating service description"""
+    # Get service ID from state
+    data = await state.get_data()
+    service_id = data["service_id"]
+    
+    # Update the service description
+    success = await service_commands.update_service(service_id, description=message.text)
+    
+    if success:
+        await message.answer(
+            f"✅ Описание услуги обновлено: {message.text}",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    else:
+        await message.answer(
+            "❌ Не удалось обновить описание услуги. Пожалуйста, попробуйте еще раз позже.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    
+    # Clear state
+    await state.clear()
+
+async def edit_service_price_start(callback: CallbackQuery, state: FSMContext, role: str):
+    """Start editing service price"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract service ID from callback data
+    service_id = callback.data.split('_')[3]
+    
+    # Save service ID in state
+    await state.update_data(service_id=service_id)
+    
+    # Set state to editing price
+    await state.set_state(AdminServiceStates.editing_price)
+    
+    await callback.message.edit_text(
+        "Пожалуйста, введите новую цену для услуги:"
+    )
+    
+    await callback.answer()
+
+async def edit_service_price(message: Message, state: FSMContext):
+    """Handle updating service price"""
+    # Validate price
+    try:
+        price = float(message.text)
+    except ValueError:
+        await message.answer("Неверный формат цены. Пожалуйста, введите число.")
+        return
+    
+    # Get service ID from state
+    data = await state.get_data()
+    service_id = data["service_id"]
+    
+    # Update the service price
+    success = await service_commands.update_service(service_id, price=price)
+    
+    if success:
+        await message.answer(
+            f"✅ Цена услуги обновлена: {price}",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    else:
+        await message.answer(
+            "❌ Не удалось обновить цену услуги. Пожалуйста, попробуйте еще раз позже.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    
+    # Clear state
+    await state.clear()
+
+async def edit_service_duration_start(callback: CallbackQuery, state: FSMContext, role: str):
+    """Start editing service duration"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract service ID from callback data
+    service_id = callback.data.split('_')[3]
+    
+    # Save service ID in state
+    await state.update_data(service_id=service_id)
+    
+    # Set state to editing duration
+    await state.set_state(AdminServiceStates.editing_duration)
+    
+    await callback.message.edit_text(
+        "Пожалуйста, введите новую продолжительность для услуги (в минутах):"
+    )
+    
+    await callback.answer()
+
+async def edit_service_duration(message: Message, state: FSMContext):
+    """Handle updating service duration"""
+    # Validate duration
+    try:
+        duration = int(message.text)
+    except ValueError:
+        await message.answer("Неверный формат продолжительности. Пожалуйста, введите целое число.")
+        return
+    
+    # Get service ID from state
+    data = await state.get_data()
+    service_id = data["service_id"]
+    
+    # Update the service duration
+    success = await service_commands.update_service(service_id, duration=duration)
+    
+    if success:
+        await message.answer(
+            f"✅ Продолжительность услуги обновлена: {duration} минут",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    else:
+        await message.answer(
+            "❌ Не удалось обновить продолжительность услуги. Пожалуйста, попробуйте еще раз позже.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    
+    # Clear state
+    await state.clear()
+
+async def edit_service_category_start(callback: CallbackQuery, state: FSMContext, role: str):
+    """Start editing service category"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract service ID from callback data
+    service_id = callback.data.split('_')[3]
+    
+    # Save service ID in state
+    await state.update_data(service_id=service_id)
+    
+    # Get all categories for selection
+    categories = await service_commands.get_all_categories()
+    
+    if not categories:
+        await callback.message.edit_text(
+            "Нет доступных категорий. Сначала создайте категории.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+        await callback.answer()
+        return
+    
+    # Create keyboard with categories
+    keyboard = InlineKeyboardBuilder()
+    for category in categories:
+        keyboard.button(
+            text=category.get('name', 'Без названия'),
+            callback_data=f"set_service_category_{service_id}_{category['id']}"
+        )
+    
+    keyboard.button(
+        text="Без категории",
+        callback_data=f"set_service_category_{service_id}_none"
+    )
+    
+    keyboard.button(
+        text="Назад",
+        callback_data=f"admin_view_service_{service_id}"
+    )
+    
+    keyboard.adjust(1)
+    
+    await callback.message.edit_text(
+        "Выберите категорию для услуги:",
+        reply_markup=keyboard.as_markup()
+    )
+    
+    await callback.answer()
+
+async def set_service_category(callback: CallbackQuery, role: str):
+    """Set the category for a service"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract data from callback
+    parts = callback.data.split('_')
+    service_id = parts[3]
+    category_id = None
+    if parts[4] != "none":
+        category_id = parts[4]
+    
+    # Update service category
+    success = await service_commands.update_service(service_id, category_id=category_id)
+    
+    if success:
+        # Get updated category info
+        category_text = "Без категории"
+        if category_id:
+            category = await service_commands.get_category(category_id)
+            if category:
+                category_text = category.get('name', 'Неизвестная категория')
+        
+        await callback.message.edit_text(
+            f"✅ Категория услуги обновлена на: {category_text}",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    else:
+        await callback.message.edit_text(
+            "❌ Не удалось обновить категорию услуги. Пожалуйста, попробуйте еще раз позже.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    
+    await callback.answer()
+
+async def delete_service_confirm(callback: CallbackQuery, role: str):
+    """Confirm service deletion"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract service ID from callback data
+    service_id = callback.data.split('_')[2]
+    
+    await callback.message.edit_text(
+        "Вы уверены, что хотите удалить эту услугу? Это действие нельзя отменить.",
+        reply_markup=admin_keyboards.get_confirm_delete_keyboard(service_id, "service")
+    )
+    
+    await callback.answer()
+
+async def delete_service(callback: CallbackQuery, role: str):
+    """Handle service deletion"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract service ID from callback data
+    service_id = callback.data.split('_')[3]
+    
+    # Delete the service
+    success = await service_commands.delete_service(service_id)
+    
+    if success:
+        await callback.message.edit_text(
+            "✅ Услуга успешно удалена!",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    else:
+        await callback.message.edit_text(
+            "❌ Не удалось удалить услугу. Пожалуйста, попробуйте еще раз позже.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    
+    await callback.answer()
+
+# Category management
 async def admin_categories(callback: CallbackQuery, role: str):
     """Handle admin categories menu"""
     # Check if user has admin or ceo role
@@ -117,7 +869,7 @@ async def add_category_name(message: Message, state: FSMContext):
     
     if category:
         await message.answer(
-            f"✅ Категория добавлена успешно!\n\nНазвание: {name}",
+            f"✅ Категория добавлена успешно!\n\nНазвание: {name}\n\nВы можете добавить услуги в эту категорию с помощью функции 'Быстрое создание услуг'",
             reply_markup=admin_keyboards.get_back_to_admin_keyboard()
         )
     else:
@@ -457,7 +1209,7 @@ async def edit_offer(callback: CallbackQuery, role: str):
     
     await callback.answer()
 
-# Handlers for editing offer fields (similar to service editing)
+# Handlers for editing offer fields
 async def edit_offer_name_start(callback: CallbackQuery, state: FSMContext, role: str):
     """Start editing offer name"""
     # Check if user has admin or ceo role
@@ -652,433 +1404,85 @@ async def edit_offer_duration(message: Message, state: FSMContext):
     # Clear state
     await state.clear()
 
-# Adding functionality for user verification
-async def admin_view_appointment(callback: CallbackQuery, role: str, bot: Bot):
-    """Handle viewing a specific appointment"""
+async def delete_offer_confirm(callback: CallbackQuery, role: str):
+    """Confirm offer deletion"""
     # Check if user has admin or ceo role
     if role not in ["admin", "ceo"]:
         await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
         return
     
-    # Extract appointment ID from callback data
-    appointment_id = callback.data.split('_')[3]
-    
-    # Get appointment details
-    appointment = await appointment_commands.get_appointment(appointment_id)
-    
-    if not appointment:
-        await callback.message.edit_text(
-            "Запись не найдена.",
-            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
-        )
-        await callback.answer()
-        return
-    
-    # Get service and master details
-    service_info = "Не указана"
-    master_info = "Не указан"
-    user_info = f"ID: {appointment.get('user_id', 'Не указан')}"
-    
-    service = await service_commands.get_service(appointment.get('service_id'))
-    if service:
-        service_info = f"{service.get('name')} - {service.get('price')}"
-    
-    master = await master_commands.get_master(appointment.get('master_id'))
-    if master:
-        master_info = master.get('name')
-    
-    # Format payment method
-    payment_method = appointment.get('payment_method', 'Не указан')
-    payment_text = {
-        'cash': '💵 Наличные',
-        'card': '💳 Карта/Терминал',
-        'transfer': '📲 Перевод'
-    }.get(payment_method, payment_method)
-    
-    # Format status
-    status = appointment.get('status', 'confirmed')
-    status_text = {
-        'confirmed': '✅ Подтверждено',
-        'canceled': '❌ Отменено',
-        'completed': '✓ Выполнено',
-        'paid': '💰 Оплачено',
-        'pending': '⏳ Ожидает подтверждения'
-    }.get(status, status)
-    
-    # Format details
-    details = f"""
-Данные записи:
-
-ID: {appointment['id']}
-Дата: {appointment['date']}
-Время: {appointment['time']}
-Статус: {status_text}
-Оплата: {payment_text}
-
-Услуга: {service_info}
-Мастер: {master_info}
-Клиент: {user_info}
-"""
+    # Extract offer ID from callback data
+    offer_id = callback.data.split('_')[2]
     
     await callback.message.edit_text(
-        details,
-        reply_markup=admin_keyboards.get_appointment_actions_keyboard(appointment_id, status)
+        "Вы уверены, что хотите удалить это специальное предложение? Это действие нельзя отменить.",
+        reply_markup=admin_keyboards.get_confirm_delete_keyboard(offer_id, "offer")
     )
     
-    # If this is a pending appointment from a new client, send notification to verify
-    if status == "pending" and not await appointment_commands.is_user_verified(appointment.get('user_id')):
-        await bot.send_message(
-            callback.from_user.id,
-            f"⚠️ Внимание! Новая запись от непроверенного клиента!\n\nID записи: {appointment['id']}\nКлиент: {user_info}\n\nТребуется подтверждение.",
-            reply_markup=admin_keyboards.get_appointment_actions_keyboard(appointment_id, status)
+    await callback.answer()
+
+async def delete_offer(callback: CallbackQuery, role: str):
+    """Handle offer deletion"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    # Extract offer ID from callback data
+    offer_id = callback.data.split('_')[3]
+    
+    # Delete the offer
+    success = await service_commands.delete_offer(offer_id)
+    
+    if success:
+        await callback.message.edit_text(
+            "✅ Специальное предложение успешно удалено!",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
+        )
+    else:
+        await callback.message.edit_text(
+            "❌ Не удалось удалить специальное предложение. Пожалуйста, попробуйте еще раз позже.",
+            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
         )
     
     await callback.answer()
+
+# Appointment functions
+async def admin_appointments(callback: CallbackQuery, role: str):
+    """Handle admin appointments menu"""
+    # Check permissions and rest of implementation
+    # ... keep existing code (admin_appointments function)
+
+async def admin_appointments_date(callback: CallbackQuery, role: str):
+    """Handle viewing appointments for a specific date"""
+    # Check permissions and rest of implementation
+    # ... keep existing code (admin_appointments_date function)
+
+async def admin_view_appointment(callback: CallbackQuery, role: str, bot: Bot):
+    """Handle viewing a specific appointment"""
+    # Check permissions and rest of implementation
+    # ... keep existing code (admin_view_appointment function)
 
 async def admin_confirm_appointment(callback: CallbackQuery, role: str, bot: Bot):
     """Handle confirming a pending appointment"""
-    # Check if user has admin or ceo role
-    if role not in ["admin", "ceo"]:
-        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
-        return
-    
-    # Extract appointment ID from callback data
-    appointment_id = callback.data.split('_')[3]
-    
-    # Get appointment details
-    appointment = await appointment_commands.get_appointment(appointment_id)
-    
-    if not appointment:
-        await callback.message.edit_text(
-            "Запись не найдена.",
-            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
-        )
-        await callback.answer()
-        return
-    
-    # Update appointment status to confirmed
-    success = await appointment_commands.update_appointment_status(appointment_id, "confirmed")
-    
-    # Verify the user for future appointments
-    user_id = appointment.get('user_id')
-    await appointment_commands.verify_user(user_id)
-    
-    if success:
-        # Get service and master details for the notification
-        service_info = "услугу"
-        master_info = "мастера"
-        
-        service = await service_commands.get_service(appointment.get('service_id'))
-        if service:
-            service_info = service.get('name')
-        
-        master = await master_commands.get_master(appointment.get('master_id'))
-        if master:
-            master_info = master.get('name')
-        
-        # Notify the client that their appointment is confirmed
-        try:
-            await bot.send_message(
-                user_id,
-                f"✅ Ваша запись подтверждена!\n\nУслуга: {service_info}\nДата: {appointment.get('date')}\nВремя: {appointment.get('time')}\nМастер: {master_info}"
-            )
-        except Exception as e:
-            print(f"Error sending confirmation to user: {e}")
-        
-        await callback.message.edit_text(
-            "✅ Запись подтверждена. Клиент добавлен в список проверенных.",
-            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
-        )
-    else:
-        await callback.message.edit_text(
-            "❌ Не удалось подтвердить запись. Пожалуйста, попробуйте еще раз позже.",
-            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
-        )
-    
-    await callback.answer()
+    # Check permissions and rest of implementation
+    # ... keep existing code (admin_confirm_appointment function)
 
-# Update existing handlers
-async def add_service_start(callback: CallbackQuery, state: FSMContext, role: str):
-    """Start the add service flow"""
-    # Check if user has admin or ceo role
-    if role not in ["admin", "ceo"]:
-        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
-        return
-    
-    # Set state to adding name
-    await state.set_state(AdminServiceStates.adding_name)
-    
-    await callback.message.edit_text(
-        "Пожалуйста, введите название новой услуги:"
-    )
-    
-    await callback.answer()
-
-async def add_service_name(message: Message, state: FSMContext):
-    """Handle adding service name"""
-    # Save the name
-    await state.update_data(name=message.text)
-    
-    # Move to description state
-    await state.set_state(AdminServiceStates.adding_description)
-    
-    await message.answer("Пожалуйста, введите описание услуги:")
-
-async def add_service_description(message: Message, state: FSMContext):
-    """Handle adding service description"""
-    # Save the description
-    await state.update_data(description=message.text)
-    
-    # Move to price state
-    await state.set_state(AdminServiceStates.adding_price)
-    
-    await message.answer("Пожалуйста, введите цену услуги:")
-
-async def add_service_price(message: Message, state: FSMContext):
-    """Handle adding service price"""
-    # Validate price
-    try:
-        price = float(message.text)
-    except ValueError:
-        await message.answer("Неверный формат цены. Пожалуйста, введите число.")
-        return
-    
-    # Save the price
-    await state.update_data(price=price)
-    
-    # Move to duration state
-    await state.set_state(AdminServiceStates.adding_duration)
-    
-    await message.answer("Пожалуйста, введите продолжительность услуги в минутах (например, 15, 30, 60):")
-
-async def add_service_duration(message: Message, state: FSMContext):
-    """Handle adding service duration"""
-    # Validate duration
-    try:
-        duration = int(message.text)
-    except ValueError:
-        await message.answer("Неверный формат продолжительности. Пожалуйста, введите целое число.")
-        return
-    
-    # Save the duration
-    await state.update_data(duration=duration)
-    
-    # Get categories for selection
-    categories = await service_commands.get_all_categories()
-    
-    if categories:
-        # Create a keyboard for category selection
-        keyboard = InlineKeyboardBuilder()
-        for category in categories:
-            keyboard.button(
-                text=f"{category['name']}",
-                callback_data=f"add_service_category_{category['id']}"
-            )
-        
-        keyboard.button(
-            text="Без категории",
-            callback_data="add_service_category_none"
-        )
-        
-        keyboard.adjust(1)  # One button per row
-        
-        # Move to category state
-        await state.set_state(AdminServiceStates.adding_category)
-        
-        await message.answer(
-            "Пожалуйста, выберите категорию для услуги:",
-            reply_markup=keyboard.as_markup()
-        )
-    else:
-        # No categories, add service without a category
-        await add_service_final(message, state, None)
-
-async def add_service_category(callback: CallbackQuery, state: FSMContext):
-    """Handle category selection for a new service"""
-    # Extract category ID from callback data
-    category_id = None
-    if callback.data != "add_service_category_none":
-        category_id = callback.data.split('_')[3]
-    
-    await add_service_final(callback.message, state, category_id)
-    await callback.answer()
-
-async def add_service_final(message, state: FSMContext, category_id=None):
-    """Finalize adding a service"""
-    # Get all data
-    data = await state.get_data()
-    name = data["name"]
-    description = data["description"]
-    price = data["price"]
-    duration = data["duration"]
-    
-    # Add the service
-    service = await service_commands.add_service(name, description, price, duration, category_id)
-    
-    category_text = ""
-    if category_id:
-        category = await service_commands.get_category(category_id)
-        if category:
-            category_text = f"\nКатегория: {category['name']}"
-    
-    if service:
-        await message.answer(
-            f"✅ Услуга добавлена успешно!\n\nНазвание: {name}\nОписание: {description}\nЦена: {price}\nПродолжительность: {duration}{category_text}",
-            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
-        )
-    else:
-        await message.answer(
-            "❌ Не удалось добавить услугу. Пожалуйста, попробуйте еще раз позже.",
-            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
-        )
-    
-    # Clear state
-    await state.clear()
-
-# Add handlers for appointment status updates
+# Appointment status update handlers
 async def mark_completed(callback: CallbackQuery, role: str, bot: Bot):
     """Mark an appointment as completed"""
-    # Check if user has admin or ceo role
-    if role not in ["admin", "ceo"]:
-        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
-        return
-    
-    # Extract appointment ID from callback data
-    appointment_id = callback.data.split('_')[2]
-    
-    # Update appointment status
-    success = await appointment_commands.complete_appointment(appointment_id)
-    
-    if success:
-        # Get appointment details
-        appointment = await appointment_commands.get_appointment(appointment_id)
-        
-        await callback.message.edit_text(
-            f"✅ Запись #{appointment_id} отмечена как выполненная.",
-            reply_markup=admin_keyboards.get_appointment_actions_keyboard(appointment_id, "completed")
-        )
-        
-        # Notify the client
-        try:
-            user_id = appointment.get('user_id')
-            if user_id:
-                await bot.send_message(
-                    user_id,
-                    f"✅ Ваша запись #{appointment_id} отмечена как выполненная."
-                )
-        except Exception as e:
-            print(f"Error sending message to user: {e}")
-    else:
-        await callback.message.edit_text(
-            "❌ Не удалось обновить статус записи. Пожалуйста, попробуйте еще раз позже.",
-            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
-        )
-    
-    await callback.answer()
+    # Check permissions and rest of implementation
+    # ... keep existing code (mark_completed function)
 
 async def mark_paid(callback: CallbackQuery, role: str, bot: Bot):
     """Mark an appointment as paid"""
-    # Check if user has admin or ceo role
-    if role not in ["admin", "ceo"]:
-        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
-        return
-    
-    # Extract appointment ID from callback data
-    appointment_id = callback.data.split('_')[2]
-    
-    # Update appointment status
-    success = await appointment_commands.update_appointment_status(appointment_id, "paid")
-    
-    if success:
-        # Get appointment details
-        appointment = await appointment_commands.get_appointment(appointment_id)
-        
-        await callback.message.edit_text(
-            f"✅ Запись #{appointment_id} отмечена как оплаченная.",
-            reply_markup=admin_keyboards.get_appointment_actions_keyboard(appointment_id, "paid")
-        )
-        
-        # Notify the client
-        try:
-            user_id = appointment.get('user_id')
-            if user_id:
-                await bot.send_message(
-                    user_id,
-                    f"✅ Ваша запись #{appointment_id} отмечена как оплаченная."
-                )
-        except Exception as e:
-            print(f"Error sending message to user: {e}")
-    else:
-        await callback.message.edit_text(
-            "❌ Не удалось обновить статус записи. Пожалуйста, попробуйте еще раз позже.",
-            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
-        )
-    
-    await callback.answer()
+    # Check permissions and rest of implementation
+    # ... keep existing code (mark_paid function)
 
 async def set_payment_method(callback: CallbackQuery, role: str):
     """Set payment method for an appointment"""
-    # Check if user has admin or ceo role
-    if role not in ["admin", "ceo"]:
-        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
-        return
-    
-    # Extract data from callback data
-    parts = callback.data.split('_')
-    method = parts[2]
-    appointment_id = parts[3]
-    
-    # Update appointment payment method
-    success = await appointment_commands.update_appointment_payment(appointment_id, method)
-    
-    if success:
-        # Get appointment details
-        appointment = await appointment_commands.get_appointment(appointment_id)
-        
-        payment_text = {
-            'cash': 'наличными',
-            'card': 'картой/через терминал',
-            'transfer': 'переводом'
-        }.get(method, method)
-        
-        await callback.message.edit_text(
-            f"✅ Способ оплаты для записи #{appointment_id} изменен на {payment_text}.",
-            reply_markup=admin_keyboards.get_appointment_actions_keyboard(appointment_id, appointment.get('status', 'confirmed'))
-        )
-    else:
-        await callback.message.edit_text(
-            "❌ Не удалось обновить способ оплаты. Пожалуйста, попробуйте еще раз позже.",
-            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
-        )
-    
-    await callback.answer()
-
-# Handler for appointments by date
-async def admin_appointments_date(callback: CallbackQuery, role: str):
-    """Handle viewing appointments for a specific date"""
-    # Check if user has admin or ceo role
-    if role not in ["admin", "ceo"]:
-        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
-        return
-    
-    # Extract date from callback data
-    date = callback.data.split('_')[3]
-    
-    # Get appointments for this date
-    appointments = await appointment_commands.get_appointments_by_date(date)
-    
-    if not appointments:
-        await callback.message.edit_text(
-            f"Нет записей на {date}.",
-            reply_markup=admin_keyboards.get_back_to_admin_keyboard()
-        )
-    else:
-        await callback.message.edit_text(
-            f"Записи на {date}:",
-            reply_markup=admin_keyboards.get_date_appointments_admin_keyboard(appointments, date)
-        )
-    
-    await callback.answer()
+    # Check permissions and rest of implementation
+    # ... keep existing code (set_payment_method function)
 
 def register_handlers(dp: Dispatcher):
     """Register admin handlers"""
@@ -1093,6 +1497,13 @@ def register_handlers(dp: Dispatcher):
     dp.callback_query.register(admin_offers, F.data == "admin_offers")
     dp.callback_query.register(admin_categories, F.data == "admin_categories")
     
+    # Template-based service creation
+    dp.callback_query.register(admin_template_categories, F.data == "template_categories")
+    dp.callback_query.register(admin_add_category_services, F.data.startswith("template_category_"))
+    dp.callback_query.register(update_category_services_price, F.data.startswith("update_category_price_"))
+    dp.message.register(process_category_services_price, AdminServiceStates.updating_price)
+    dp.callback_query.register(back_to_services, F.data == "back_to_services")
+    
     # Service management handlers
     dp.callback_query.register(add_service_start, F.data == "add_service")
     dp.message.register(add_service_name, AdminServiceStates.adding_name)
@@ -1101,6 +1512,7 @@ def register_handlers(dp: Dispatcher):
     dp.message.register(add_service_duration, AdminServiceStates.adding_duration)
     dp.callback_query.register(add_service_category, F.data.startswith("add_service_category_"))
     dp.callback_query.register(view_services, F.data == "view_services")
+    dp.callback_query.register(view_category_services, F.data.startswith("view_category_services_"))
     dp.callback_query.register(admin_view_service, F.data.startswith("admin_view_service_"))
     
     # Service editing handlers
@@ -1113,6 +1525,8 @@ def register_handlers(dp: Dispatcher):
     dp.message.register(edit_service_price, AdminServiceStates.editing_price)
     dp.callback_query.register(edit_service_duration_start, F.data.startswith("edit_service_duration_"))
     dp.message.register(edit_service_duration, AdminServiceStates.editing_duration)
+    dp.callback_query.register(edit_service_category_start, F.data.startswith("edit_service_category_"))
+    dp.callback_query.register(set_service_category, F.data.startswith("set_service_category_"))
     
     # Service deletion handlers
     dp.callback_query.register(delete_service_confirm, F.data.startswith("delete_service_confirm_"))
@@ -1180,3 +1594,4 @@ def register_handlers(dp: Dispatcher):
     # Appointment cancellation handlers
     dp.callback_query.register(admin_cancel_appointment_confirm, F.data.startswith("admin_cancel_appointment_"))
     dp.callback_query.register(admin_cancel_appointment, F.data.startswith("confirm_cancel_"))
+

@@ -5,6 +5,7 @@ from utils.db_api.google_sheets import get_sheet, write_to_sheet
 SERVICES_SHEET = "Services"
 CATEGORIES_SHEET = "Categories"
 OFFERS_SHEET = "Offers"
+TEMPLATES_SHEET = "ServiceTemplates"
 
 async def get_all_services():
     """Get all services from the database"""
@@ -128,9 +129,22 @@ async def get_category(category_id):
             return category
     return None
 
+async def get_category_by_name(name):
+    """Get a category by its name"""
+    categories = await get_all_categories()
+    for category in categories:
+        if category.get('name').lower() == name.lower():
+            return category
+    return None
+
 async def add_category(name):
     """Add a new category to the database"""
     categories = await get_all_categories()
+    
+    # Check if category already exists
+    for category in categories:
+        if category.get('name').lower() == name.lower():
+            return category
     
     # Generate a new ID
     new_id = "1"
@@ -273,3 +287,59 @@ async def delete_offer(offer_id):
         return True
     
     return False
+
+# Template service functions
+async def get_all_template_categories():
+    """Get all unique category names from the templates"""
+    templates = await get_sheet(TEMPLATES_SHEET)
+    # Extract unique category names
+    categories = set()
+    for template in templates:
+        categories.add(template.get('category_name', ''))
+    
+    # Convert to list and sort
+    return sorted(list(categories))
+
+async def get_template_services_by_category(category_name):
+    """Get all template services for a specific category"""
+    templates = await get_sheet(TEMPLATES_SHEET)
+    return [t for t in templates if t.get('category_name') == category_name]
+
+async def add_template_services_to_category(category_name):
+    """Add all template services for a category to the services table"""
+    # Get category by name or create it
+    category = await get_category_by_name(category_name)
+    if not category:
+        category = await add_category(category_name)
+    
+    if not category:
+        return False, "Не удалось создать категорию"
+    
+    category_id = category.get('id')
+    
+    # Get template services for this category
+    templates = await get_template_services_by_category(category_name)
+    if not templates:
+        return False, f"Шаблоны услуг для категории '{category_name}' не найдены"
+    
+    # Get existing services
+    existing_services = await get_all_services()
+    existing_names = {service.get('name') for service in existing_services 
+                      if service.get('category_id') == category_id}
+    
+    # Add each template service if it doesn't already exist
+    added_count = 0
+    for template in templates:
+        service_name = template.get('service_name')
+        if service_name not in existing_names:
+            # Placeholder price of 0, admin will set the actual price later
+            await add_service(
+                name=service_name,
+                description=template.get('description', ''),
+                price=0,  # Default price 0
+                duration=template.get('default_duration', 60),
+                category_id=category_id
+            )
+            added_count += 1
+    
+    return True, f"Добавлено {added_count} новых услуг в категорию '{category_name}'"
