@@ -1,12 +1,13 @@
-
 # Partial update of the admin.py file
 # Adding new functionality for special offers, categories, and user verification
 
 from aiogram import Dispatcher, F, Bot
+from aiogram import types
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from utils.db_api import service_commands, appointment_commands, master_commands
 from keyboards import admin_keyboards
@@ -50,7 +51,31 @@ class AdminOfferStates(StatesGroup):
     editing_price = State()
     editing_duration = State()
 
-# ... keep existing code (function cmd_admin and back_to_admin)
+async def cmd_admin(message: Message, role: str):
+    """Admin command handler"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await message.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    await message.answer(
+        "Панель администратора. Выберите действие:",
+        reply_markup=admin_keyboards.get_admin_keyboard()
+    )
+
+async def back_to_admin(callback: CallbackQuery, role: str):
+    """Handle back to admin menu button"""
+    # Check if user has admin or ceo role
+    if role not in ["admin", "ceo"]:
+        await callback.answer("Доступ запрещен. Это действие доступно только администраторам.")
+        return
+    
+    await callback.message.edit_text(
+        "Панель администратора. Выберите действие:",
+        reply_markup=admin_keyboards.get_admin_keyboard()
+    )
+    
+    await callback.answer()
 
 async def admin_categories(callback: CallbackQuery, role: str):
     """Handle admin categories menu"""
