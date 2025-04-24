@@ -334,11 +334,6 @@ async def get_template_services_by_category(category_name):
 
 async def create_services_from_template(category_name):
     """Create services from a template category"""
-    # This is an alias for add_template_services_to_category for compatibility
-    return await add_template_services_to_category(category_name)
-
-async def add_template_services_to_category(category_name):
-    """Add all template services for a category to the services table"""
     # Get category by name or create it
     category = await get_category_by_name(category_name)
     if not category:
@@ -374,7 +369,11 @@ async def add_template_services_to_category(category_name):
             )
             added_count += 1
     
-    return (True, f"Добавлено {added_count} новых услуг в категорию '{category_name}'")
+    return {"success": True, "message": f"Добавлено {added_count} новых услуг в категорию '{category_name}'", "category_id": category_id}
+
+async def add_template_services_to_category(category_name):
+    """Add all template services for a category to the services table"""
+    return await create_services_from_template(category_name)
 
 # Initialize the template data
 async def initialize_template_data():

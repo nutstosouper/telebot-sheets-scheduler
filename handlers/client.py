@@ -2,20 +2,19 @@
 from aiogram import F, Router, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
-from .client_book_commands import router as book_router
 
 def register_handlers(dp: Dispatcher):
     """Register all client handlers"""
     
-    # Register the book commands router
+    # First, register other client handlers that come before book_router
+    # (if there are any)
+    
+    # Import and register the book commands router
+    from .client_book_commands import router as book_router
     dp.include_router(book_router)
     
-    # Register other client handlers
+    # Register other client handlers below book_router
     # ...
     
-    # Add /book command handler separately if needed
-    @dp.message(Command("book"))
-    async def book_command_handler(message: Message):
-        """Forward to the actual book command handler"""
-        from .client_book_commands import book_command
-        await book_command(message)
+    # Note: We don't need to register a separate /book command handler here
+    # as it's already handled by book_router
