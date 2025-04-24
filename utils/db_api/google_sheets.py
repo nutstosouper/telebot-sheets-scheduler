@@ -1,4 +1,3 @@
-
 import os
 import gspread
 import logging
@@ -53,7 +52,7 @@ async def setup():
         # Ensure all required worksheets exist
         worksheets = [ws.title for ws in sheet.worksheets()]
         
-        required_sheets = ['Services', 'Clients', 'Appointments', 'History', 'Masters', 'Categories', 'Offers', 'VerifiedUsers', 'ServiceTemplates']
+        required_sheets = ['Services', 'Clients', 'Appointments', 'History', 'Masters', 'Categories', 'Offers', 'VerifiedUsers', 'ServiceTemplates', 'Subscriptions']
         
         for required in required_sheets:
             if required not in worksheets:
@@ -70,7 +69,7 @@ async def setup():
                 elif required == 'History':
                     sheet.worksheet(required).append_row(['timestamp', 'user_id', 'service_id', 'date', 'time', 'amount', 'master_id', 'payment_method'])
                 elif required == 'Masters':
-                    sheet.worksheet(required).append_row(['id', 'user_id', 'name', 'telegram', 'address', 'location', 'notification_enabled', 'work_hours'])
+                    sheet.worksheet(required).append_row(['id', 'telegram_id', 'name', 'telegram', 'phone', 'specialties', 'location', 'description'])
                 elif required == 'Categories':
                     sheet.worksheet(required).append_row(['id', 'name'])
                 elif required == 'Offers':
@@ -78,7 +77,9 @@ async def setup():
                 elif required == 'VerifiedUsers':
                     sheet.worksheet(required).append_row(['user_id'])
                 elif required == 'ServiceTemplates':
-                    sheet.worksheet(required).append_row(['category_name', 'service_name', 'description', 'default_duration'])
+                    sheet.worksheet(required).append_row(['category_name', 'service_name', 'description', 'default_duration', 'category_id'])
+                elif required == 'Subscriptions':
+                    sheet.worksheet(required).append_row(['user_id', 'start_date', 'end_date', 'trial', 'referrer_id'])
         
         # Initialize template services if ServiceTemplates is empty
         templates_sheet = sheet.worksheet('ServiceTemplates')
@@ -96,8 +97,12 @@ async def setup():
         return None
 
 def initialize_template_services(worksheet):
-    """Initialize template services"""
+    """Initialize template services with category_id"""
+    # Get all categories or create them if they don't exist
+    category_ids = {}
+    
     templates = [
+        # Format: category_name, service_name, description, default_duration
         # Маникюр
         ['Маникюр', 'Классический маникюр', 'Обрезной маникюр с обработкой кутикулы', 45],
         ['Маникюр', 'Аппаратный маникюр', 'Маникюр с использованием аппарата без повреждения кутикулы', 60],
@@ -159,7 +164,7 @@ def initialize_template_services(worksheet):
         ['Парикмахерские услуги', 'Окрашивание в один тон', 'Равномерное окрашивание волос', 120],
         ['Парикмахерские услуги', 'Мелирование', 'Частичное окрашивание прядей', 150],
         ['Парикмахерские услуги', 'Балаяж/омбре', 'Градиентное окрашивание волос', 180],
-        ['Парикмахерские услуги', 'Ламинирование волос', 'Восстановление и глянцевание волос', 90],
+        ['Парикмахерские услуги', 'Ламинирование ��олос', 'Восстановление и глянцевание волос', 90],
         ['Парикмахерские услуги', 'Кератин/ботокс', 'Глубокое восстановление структуры волос', 180],
         ['Парикмахерские услуги', 'Уходовые процедуры', 'Профессиональный уход за волосами', 60],
         
@@ -180,7 +185,18 @@ def initialize_template_services(worksheet):
     batch_size = 20
     for i in range(0, len(templates), batch_size):
         batch = templates[i:i+batch_size]
-        worksheet.append_rows(batch)
+        
+        # Add category_id field to each template service
+        enhanced_batch = []
+        for template in batch:
+            category_name = template[0]
+            # We'll set a placeholder for category_id - it will be updated later
+            enhanced_template = template + [""]
+            enhanced_batch.append(enhanced_template)
+            
+        worksheet.append_rows(enhanced_batch)
+    
+    return True
 
 async def get_sheet(sheet_name):
     """Get data from a specific sheet"""

@@ -34,6 +34,7 @@ async def set_commands():
         BotCommand(command="/help", description="Get help"),
         BotCommand(command="/book", description="Book a service"),
         BotCommand(command="/appointments", description="View your appointments"),
+        BotCommand(command="/subscription", description="Manage your subscription"),
         BotCommand(command="/admin", description="Admin panel (restricted)"),
         BotCommand(command="/ceo", description="CEO panel (restricted)")
     ]

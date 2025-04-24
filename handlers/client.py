@@ -13,8 +13,9 @@ def register_handlers(dp: Dispatcher):
     from .client_book_commands import router as book_router
     dp.include_router(book_router)
     
+    # Register subscription router
+    from .client_subscription_commands import router as subscription_router
+    dp.include_router(subscription_router)
+    
     # Register other client handlers below book_router
     # ...
-    
-    # Note: We don't need to register a separate /book command handler here
-    # as it's already handled by book_router
