@@ -1,5 +1,6 @@
 
 from utils.db_api.google_sheets import get_sheet, write_to_sheet
+import json
 
 # Sheet names
 SERVICES_SHEET = "Services"
@@ -44,6 +45,24 @@ async def get_services_by_category():
 async def get_services_in_category(category_id):
     """Get all services in a specific category"""
     services = await get_all_services()
+    return [service for service in services if service.get('category_id') == category_id]
+
+async def get_services_by_category_name(category_name):
+    """Get all services in a category by name"""
+    services = await get_all_services()
+    categories = await get_all_categories()
+    
+    # Find category ID by name
+    category_id = None
+    for category in categories:
+        if category.get('name') == category_name:
+            category_id = category.get('id')
+            break
+    
+    if not category_id:
+        return []
+    
+    # Get services in this category
     return [service for service in services if service.get('category_id') == category_id]
 
 async def add_service(name, description, price, duration, category_id=None):
@@ -120,6 +139,10 @@ async def get_all_categories():
     """Get all categories from the database"""
     categories = await get_sheet(CATEGORIES_SHEET)
     return categories
+
+async def get_categories():
+    """Alias for get_all_categories"""
+    return await get_all_categories()
 
 async def get_category(category_id):
     """Get a category by its ID"""
@@ -217,6 +240,10 @@ async def get_all_offers():
     offers = await get_sheet(OFFERS_SHEET)
     return offers
 
+async def get_offers():
+    """Alias for get_all_offers"""
+    return await get_all_offers()
+
 async def get_offer(offer_id):
     """Get a special offer by its ID"""
     offers = await get_all_offers()
@@ -305,6 +332,11 @@ async def get_template_services_by_category(category_name):
     templates = await get_sheet(TEMPLATES_SHEET)
     return [t for t in templates if t.get('category_name') == category_name]
 
+async def create_services_from_template(category_name):
+    """Create services from a template category"""
+    # This is an alias for add_template_services_to_category for compatibility
+    return await add_template_services_to_category(category_name)
+
 async def add_template_services_to_category(category_name):
     """Add all template services for a category to the services table"""
     # Get category by name or create it
@@ -343,3 +375,157 @@ async def add_template_services_to_category(category_name):
             added_count += 1
     
     return True, f"Добавлено {added_count} новых услуг в категорию '{category_name}'"
+
+# Initialize the template data
+async def initialize_template_data():
+    """Initialize template data with predefined categories and services"""
+    templates = await get_sheet(TEMPLATES_SHEET)
+    
+    # Skip initialization if data already exists
+    if templates:
+        return
+    
+    template_data = [
+        # Маникюр
+        {"category_name": "Маникюр", "service_name": "Классический маникюр", 
+         "description": "Традиционный маникюр с обработкой кутикулы", "default_duration": 40},
+        {"category_name": "Маникюр", "service_name": "Аппаратный маникюр", 
+         "description": "Аппаратный маникюр с использованием профессиональной фрезы", "default_duration": 50},
+        {"category_name": "Маникюр", "service_name": "Комбинированный маникюр", 
+         "description": "Комбинированный маникюр (аппаратный + классический)", "default_duration": 60},
+        {"category_name": "Маникюр", "service_name": "Маникюр + покрытие гель-лак", 
+         "description": "Маникюр с последующим покрытием гель-лаком", "default_duration": 90},
+        {"category_name": "Маникюр", "service_name": "Укрепление ногтей (биогель/акрил)", 
+         "description": "Укрепление ногтевой пластины биогелем или акрилом", "default_duration": 70},
+        {"category_name": "Маникюр", "service_name": "Снятие гель-лака", 
+         "description": "Бережное снятие гель-лака", "default_duration": 20},
+        {"category_name": "Маникюр", "service_name": "Ремонт ногтя", 
+         "description": "Ремонт сломанного ногтя", "default_duration": 15},
+        {"category_name": "Маникюр", "service_name": "Дизайн 1-2 ногтя", 
+         "description": "Художественное оформление 1-2 ногтей", "default_duration": 15},
+        {"category_name": "Маникюр", "service_name": "Дизайн всех ногтей", 
+         "description": "Художественное оформление всех ногтей", "default_duration": 30},
+        
+        # Педикюр
+        {"category_name": "Педикюр", "service_name": "Классический педикюр", 
+         "description": "Традиционный педикюр с обработкой кутикулы и стоп", "default_duration": 60},
+        {"category_name": "Педикюр", "service_name": "Аппаратный педикюр", 
+         "description": "Аппаратный педикюр с использованием профессиональной фрезы", "default_duration": 70},
+        {"category_name": "Педикюр", "service_name": "Комбинированный педикюр", 
+         "description": "Комбинированный педикюр (аппаратный + классический)", "default_duration": 80},
+        {"category_name": "Педикюр", "service_name": "Педикюр + гель-лак", 
+         "description": "Педикюр с последующим покрытием гель-лаком", "default_duration": 90},
+        {"category_name": "Педикюр", "service_name": "Снятие покрытия", 
+         "description": "Бережное снятие гель-лака с ногтей ног", "default_duration": 20},
+        {"category_name": "Педикюр", "service_name": "Обработка трещин/мозолей", 
+         "description": "Профессиональная обработка трещин и мозолей на стопах", "default_duration": 30},
+        
+        # Брови
+        {"category_name": "Брови", "service_name": "Коррекция формы бровей", 
+         "description": "Профессиональная коррекция формы бровей пинцетом", "default_duration": 30},
+        {"category_name": "Брови", "service_name": "Окрашивание краской", 
+         "description": "Окрашивание бровей профессиональной краской", "default_duration": 30},
+        {"category_name": "Брови", "service_name": "Окрашивание хной", 
+         "description": "Окрашивание бровей натуральной хной", "default_duration": 45},
+        {"category_name": "Брови", "service_name": "Ламинирование бровей", 
+         "description": "Ламинирование бровей для придания формы и объема", "default_duration": 60},
+        {"category_name": "Брови", "service_name": "Архитектура бровей (комплекс)", 
+         "description": "Комплексная услуга включающая коррекцию и окрашивание", "default_duration": 70},
+        
+        # Ресницы
+        {"category_name": "Ресницы", "service_name": "Наращивание классика", 
+         "description": "Классическое наращивание ресниц (1 к 1)", "default_duration": 120},
+        {"category_name": "Ресницы", "service_name": "2D объем", 
+         "description": "Наращивание ресниц с объемом 2D", "default_duration": 150},
+        {"category_name": "Ресницы", "service_name": "3D объем", 
+         "description": "Наращивание ресниц с объемом 3D", "default_duration": 180},
+        {"category_name": "Ресницы", "service_name": "Мега-объем", 
+         "description": "Наращивание ресниц с максимальным объемом", "default_duration": 210},
+        {"category_name": "Ресницы", "service_name": "Снятие ресниц", 
+         "description": "Бережное снятие нарощенных ресниц", "default_duration": 30},
+        {"category_name": "Ресницы", "service_name": "Ламинирование ресниц", 
+         "description": "Ламинирование натуральных ресниц для придания объема", "default_duration": 70},
+        {"category_name": "Ресницы", "service_name": "Окрашивание ресниц", 
+         "description": "Окрашивание ресниц профессиональной краской", "default_duration": 30},
+        
+        # Косметология / уход за лицом
+        {"category_name": "Косметология", "service_name": "Чистка лица механическая", 
+         "description": "Глубокая механическая чистка лица", "default_duration": 90},
+        {"category_name": "Косметология", "service_name": "Чистка лица ультразвуковая", 
+         "description": "Ультразвуковая чистка лица", "default_duration": 60},
+        {"category_name": "Косметология", "service_name": "Чистка лица комбинированная", 
+         "description": "Комбинированная чистка лица", "default_duration": 100},
+        {"category_name": "Косметология", "service_name": "Пилинг", 
+         "description": "Профессиональный химический пилинг", "default_duration": 45},
+        {"category_name": "Косметология", "service_name": "Маска/уходовая процедура", 
+         "description": "Профессиональная уходовая маска для лица", "default_duration": 40},
+        {"category_name": "Косметология", "service_name": "Массаж лица", 
+         "description": "Профессиональный массаж лица", "default_duration": 45},
+        {"category_name": "Косметология", "service_name": "Карбокситерапия", 
+         "description": "Омолаживающая процедура карбокситерапии", "default_duration": 50},
+        {"category_name": "Косметология", "service_name": "Дарсонваль", 
+         "description": "Процедура с использованием аппарата Дарсонваль", "default_duration": 30},
+        
+        # Массаж
+        {"category_name": "Массаж", "service_name": "Классический массаж", 
+         "description": "Классический общий массаж тела", "default_duration": 60},
+        {"category_name": "Массаж", "service_name": "Антицеллюлитный массаж", 
+         "description": "Интенсивный антицеллюлитный массаж", "default_duration": 60},
+        {"category_name": "Массаж", "service_name": "Лимфодренажный массаж", 
+         "description": "Лимфодренажный массаж для выведения жидкости", "default_duration": 70},
+        {"category_name": "Массаж", "service_name": "Массаж спины", 
+         "description": "Массаж спины и шейно-воротниковой зоны", "default_duration": 40},
+        {"category_name": "Массаж", "service_name": "Массаж лица", 
+         "description": "Профессиональный массаж лица", "default_duration": 30},
+        {"category_name": "Массаж", "service_name": "Расслабляющий массаж", 
+         "description": "Расслабляющий массаж всего тела", "default_duration": 90},
+        
+        # Парикмахерские услуги
+        {"category_name": "Парикмахерские услуги", "service_name": "Женская стрижка", 
+         "description": "Стрижка женская (мытье, сушка феном)", "default_duration": 60},
+        {"category_name": "Парикмахерские услуги", "service_name": "Мужская стрижка", 
+         "description": "Стрижка мужская (мытье, укладка)", "default_duration": 40},
+        {"category_name": "Парикмахерские услуги", "service_name": "Детская стрижка", 
+         "description": "Стрижка для детей до 10 лет", "default_duration": 30},
+        {"category_name": "Парикмахерские услуги", "service_name": "Укладка", 
+         "description": "Укладка волос (мытье, сушка феном)", "default_duration": 45},
+        {"category_name": "Парикмахерские услуги", "service_name": "Окрашивание в один тон", 
+         "description": "Окрашивание волос в один тон", "default_duration": 120},
+        {"category_name": "Парикмахерские услуги", "service_name": "Мелирование", 
+         "description": "Мелирование волос", "default_duration": 150},
+        {"category_name": "Парикмахерские услуги", "service_name": "Балаяж", 
+         "description": "Окрашивание волос в технике балаяж", "default_duration": 180},
+        {"category_name": "Парикмахерские услуги", "service_name": "Ламинирование волос", 
+         "description": "Ламинирование волос для блеска и защиты", "default_duration": 90},
+        {"category_name": "Парикмахерские услуги", "service_name": "Кератиновое выпрямление", 
+         "description": "Кератиновое выпрямление волос", "default_duration": 180},
+        {"category_name": "Парикмахерские услуги", "service_name": "Ботокс для волос", 
+         "description": "Процедура ботокса для восстановления волос", "default_duration": 120},
+        
+        # Депиляция / шугаринг
+        {"category_name": "Депиляция", "service_name": "Ноги полностью", 
+         "description": "Депиляция ног полностью", "default_duration": 70},
+        {"category_name": "Депиляция", "service_name": "Ноги до колена", 
+         "description": "Депиляция ног до колена", "default_duration": 40},
+        {"category_name": "Депиляция", "service_name": "Руки полностью", 
+         "description": "Депиляция рук полностью", "default_duration": 45},
+        {"category_name": "Депиляция", "service_name": "Подмышечные впадины", 
+         "description": "Депиляция подмышечных впадин", "default_duration": 20},
+        {"category_name": "Депиляция", "service_name": "Бикини классическое", 
+         "description": "Депиляция зоны классического бикини", "default_duration": 30},
+        {"category_name": "Депиляция", "service_name": "Бикини глубокое", 
+         "description": "Депиляция зоны глубокого бикини", "default_duration": 50},
+        {"category_name": "Депиляция", "service_name": "Лицо", 
+         "description": "Депиляция лица (верхняя губа, подбородок, щеки)", "default_duration": 30},
+        {"category_name": "Депиляция", "service_name": "Мужская депиляция спины", 
+         "description": "Депиляция мужской спины", "default_duration": 60},
+        {"category_name": "Депиляция", "service_name": "Мужская депиляция груди", 
+         "description": "Депиляция мужской груди", "default_duration": 50},
+        {"category_name": "Депиляция", "service_name": "Уход после процедуры", 
+         "description": "Успокаивающий уход после процедуры депиляции", "default_duration": 15}
+    ]
+    
+    # Write template data to sheet
+    await write_to_sheet(TEMPLATES_SHEET, template_data)
+    
+    return True

@@ -16,7 +16,8 @@ logging.basicConfig(level=logging.INFO)
 # Import modules
 from handlers import client, admin, ceo
 from middlewares.role_middleware import RoleMiddleware
-from utils.db_api import google_sheets
+from utils.db_api import google_sheets, service_commands
+from utils.appointment_reminders import start_reminder_scheduler
 
 # Initialize bot and dispatcher
 bot = Bot(token=os.getenv('BOT_TOKEN'))
@@ -52,11 +53,27 @@ async def main():
         await google_sheets.setup()
         logging.info("Google Sheets connection established successfully")
         
+        # Initialize template data for services
+        logging.info("Initializing template service data...")
+        await service_commands.initialize_template_data()
+        logging.info("Template service data initialized successfully")
+        
         # Register all handlers
         await register_all_handlers()
         
         # Set bot commands
         await set_commands()
+        
+        # Start appointment reminder scheduler
+        # Get admin IDs from environment variable (comma-separated list)
+        admin_ids = os.getenv('ADMIN_IDS', '').split(',')
+        admin_ids = [int(admin_id.strip()) for admin_id in admin_ids if admin_id.strip().isdigit()]
+        
+        if admin_ids:
+            logging.info(f"Starting appointment reminder scheduler for admins: {admin_ids}")
+            asyncio.create_task(start_reminder_scheduler(bot, admin_ids))
+        else:
+            logging.warning("No admin IDs configured for appointment reminders. Set ADMIN_IDS in .env file.")
         
         # Start polling
         logging.info("Starting bot")

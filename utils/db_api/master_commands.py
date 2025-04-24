@@ -53,6 +53,10 @@ async def get_all_masters():
         print(f"Error getting masters: {e}")
         return []
 
+async def get_masters():
+    """Alias for get_all_masters"""
+    return await get_all_masters()
+
 async def get_master(master_id):
     """Get master by ID"""
     global sheet

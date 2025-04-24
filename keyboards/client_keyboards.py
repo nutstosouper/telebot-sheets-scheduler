@@ -1,3 +1,4 @@
+
 # This file contains keyboard layouts for client interactions in the Telegram bot
 
 from aiogram import types
@@ -301,11 +302,6 @@ def get_appointments_keyboard(appointments):
         callback_data="filter_all"
     )
     
-    keyboard.button(
-        text="📊 Последние 3 записи",
-        callback_data="filter_recent"
-    )
-    
     # Add back to menu button
     keyboard.button(
         text="🔙 Вернуться в меню",
@@ -313,6 +309,120 @@ def get_appointments_keyboard(appointments):
     )
     
     keyboard.adjust(1)  # One button per row
+    return keyboard.as_markup()
+
+def get_active_appointments_keyboard(appointments, page=1):
+    """Generate keyboard for active appointments with pagination"""
+    keyboard = InlineKeyboardBuilder()
+    
+    # Filter active appointments
+    active_appointments = [a for a in appointments if a.get('status') not in ['canceled', 'completed']]
+    
+    # Add title
+    keyboard.button(
+        text=f"🔍 Активные записи ({len(active_appointments)})",
+        callback_data=f"active_header"
+    )
+    
+    # Paginate
+    items_per_page = 5
+    total_pages = max(1, (len(active_appointments) + items_per_page - 1) // items_per_page)
+    page = min(max(1, page), total_pages)
+    
+    start_idx = (page - 1) * items_per_page
+    end_idx = min(start_idx + items_per_page, len(active_appointments))
+    
+    # Add appointments for this page
+    for appointment in active_appointments[start_idx:end_idx]:
+        service_name = appointment.get('service_name', 'Услуга')
+        date = appointment.get('date')
+        time = appointment.get('time')
+        status_text = {
+            'confirmed': '✅',
+            'pending': '⏳',
+        }.get(appointment.get('status'), '')
+        
+        keyboard.button(
+            text=f"{status_text} {date} {time} - {service_name}",
+            callback_data=f"view_appointment_{appointment.get('id')}"
+        )
+    
+    # Add pagination buttons
+    pagination_buttons = []
+    if page > 1:
+        pagination_buttons.append(("⬅️", f"active_page_{page-1}"))
+    
+    pagination_buttons.append((f"{page}/{total_pages}", "no_action"))
+    
+    if page < total_pages:
+        pagination_buttons.append(("➡️", f"active_page_{page+1}"))
+    
+    for label, callback in pagination_buttons:
+        keyboard.button(text=label, callback_data=callback)
+    
+    # Add back button
+    keyboard.button(text="🔙 Назад к записям", callback_data="view_my_appointments")
+    keyboard.button(text="🏠 Главное меню", callback_data="back_to_menu")
+    
+    # Adjust the pagination buttons to be in one row
+    keyboard.adjust(1, len(pagination_buttons), 1, 1)
+    return keyboard.as_markup()
+
+def get_all_appointments_keyboard(appointments, page=1):
+    """Generate keyboard for all appointments with pagination"""
+    keyboard = InlineKeyboardBuilder()
+    
+    # Add title
+    keyboard.button(
+        text=f"📜 Все записи ({len(appointments)})",
+        callback_data=f"all_header"
+    )
+    
+    # Paginate
+    items_per_page = 5
+    total_pages = max(1, (len(appointments) + items_per_page - 1) // items_per_page)
+    page = min(max(1, page), total_pages)
+    
+    start_idx = (page - 1) * items_per_page
+    end_idx = min(start_idx + items_per_page, len(appointments))
+    
+    # Add appointments for this page
+    for appointment in appointments[start_idx:end_idx]:
+        service_name = appointment.get('service_name', 'Услуга')
+        date = appointment.get('date')
+        time = appointment.get('time')
+        status_text = {
+            'confirmed': '✅',
+            'pending': '⏳',
+            'canceled': '❌',
+            'completed': '✓',
+            'paid': '💰'
+        }.get(appointment.get('status'), '')
+        
+        keyboard.button(
+            text=f"{status_text} {date} {time} - {service_name}",
+            callback_data=f"view_appointment_{appointment.get('id')}"
+        )
+    
+    # Add pagination buttons
+    pagination_buttons = []
+    if page > 1:
+        pagination_buttons.append(("⬅️", f"all_page_{page-1}"))
+    
+    pagination_buttons.append((f"{page}/{total_pages}", "no_action"))
+    
+    if page < total_pages:
+        pagination_buttons.append(("➡️", f"all_page_{page+1}"))
+    
+    for label, callback in pagination_buttons:
+        keyboard.button(text=label, callback_data=callback)
+    
+    # Add back button
+    keyboard.button(text="🔙 Назад к записям", callback_data="view_my_appointments")
+    keyboard.button(text="🏠 Главное меню", callback_data="back_to_menu")
+    
+    # Adjust the pagination buttons to be in one row
+    keyboard.adjust(1, len(pagination_buttons), 1, 1)
     return keyboard.as_markup()
 
 def get_date_appointments_keyboard(appointments, date):
@@ -357,7 +467,7 @@ def get_appointment_actions_keyboard(appointment):
     # Add cancel button if appointment is not already canceled or completed
     if appointment.get('status') not in ['canceled', 'completed', 'paid']:
         keyboard.button(
-            text=f"❌ От��енить запись",
+            text=f"❌ Отменить запись",
             callback_data=f"cancel_appointment_{appointment.get('id')}"
         )
     
