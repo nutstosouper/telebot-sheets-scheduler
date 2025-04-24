@@ -345,14 +345,14 @@ async def add_template_services_to_category(category_name):
         category = await add_category(category_name)
     
     if not category:
-        return False, "Не удалось создать категорию"
+        return (False, "Не удалось создать категорию")
     
     category_id = category.get('id')
     
     # Get template services for this category
     templates = await get_template_services_by_category(category_name)
     if not templates:
-        return False, f"Шаблоны услуг для категории '{category_name}' не найдены"
+        return (False, f"Шаблоны услуг для категории '{category_name}' не найдены")
     
     # Get existing services
     existing_services = await get_all_services()
@@ -374,7 +374,7 @@ async def add_template_services_to_category(category_name):
             )
             added_count += 1
     
-    return True, f"Добавлено {added_count} новых услуг в категорию '{category_name}'"
+    return (True, f"Добавлено {added_count} новых услуг в категорию '{category_name}'")
 
 # Initialize the template data
 async def initialize_template_data():

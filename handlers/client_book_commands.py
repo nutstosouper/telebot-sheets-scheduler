@@ -1,6 +1,6 @@
 
 from aiogram import Router
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from keyboards.client_keyboards import get_main_menu_keyboard
 

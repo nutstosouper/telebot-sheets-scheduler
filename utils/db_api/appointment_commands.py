@@ -2,6 +2,7 @@
 from utils.db_api.google_sheets import get_sheet, write_to_sheet
 from utils.db_api.service_commands import get_service
 from utils.db_api.master_commands import get_master
+import utils.db_api.user_commands as user_commands
 
 # Sheet name
 APPOINTMENTS_SHEET = "Appointments"
