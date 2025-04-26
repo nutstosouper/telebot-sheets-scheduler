@@ -17,5 +17,9 @@ def register_handlers(dp: Dispatcher):
     from .client_subscription_commands import router as subscription_router
     dp.include_router(subscription_router)
     
+    # Register finance router
+    from .client_finance_commands import router as finance_router
+    dp.include_router(finance_router)
+    
     # Register other client handlers below book_router
     # ...

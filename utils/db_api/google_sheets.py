@@ -1,3 +1,4 @@
+
 import os
 import gspread
 import logging
@@ -52,7 +53,11 @@ async def setup():
         # Ensure all required worksheets exist
         worksheets = [ws.title for ws in sheet.worksheets()]
         
-        required_sheets = ['Services', 'Clients', 'Appointments', 'History', 'Masters', 'Categories', 'Offers', 'VerifiedUsers', 'ServiceTemplates', 'Subscriptions']
+        required_sheets = [
+            'Services', 'Clients', 'Appointments', 'History', 'Masters', 
+            'Categories', 'Offers', 'VerifiedUsers', 'ServiceTemplates', 
+            'Subscriptions', 'ServiceCosts', 'FinanceAnalytics', 'ClientStats'
+        ]
         
         for required in required_sheets:
             if required not in worksheets:
@@ -80,6 +85,12 @@ async def setup():
                     sheet.worksheet(required).append_row(['category_name', 'service_name', 'description', 'default_duration', 'category_id'])
                 elif required == 'Subscriptions':
                     sheet.worksheet(required).append_row(['user_id', 'start_date', 'end_date', 'trial', 'referrer_id'])
+                elif required == 'ServiceCosts':
+                    sheet.worksheet(required).append_row(['service_id', 'materials_cost', 'time_cost', 'other_costs', 'last_updated'])
+                elif required == 'FinanceAnalytics':
+                    sheet.worksheet(required).append_row(['admin_id', 'date', 'total_income', 'total_expenses', 'profit', 'appointments_count'])
+                elif required == 'ClientStats':
+                    sheet.worksheet(required).append_row(['client_id', 'total_visits', 'total_spent', 'last_visit', 'favorite_service', 'vip_status', 'notes'])
         
         # Initialize template services if ServiceTemplates is empty
         templates_sheet = sheet.worksheet('ServiceTemplates')
@@ -164,7 +175,7 @@ def initialize_template_services(worksheet):
         ['Парикмахерские услуги', 'Окрашивание в один тон', 'Равномерное окрашивание волос', 120],
         ['Парикмахерские услуги', 'Мелирование', 'Частичное окрашивание прядей', 150],
         ['Парикмахерские услуги', 'Балаяж/омбре', 'Градиентное окрашивание волос', 180],
-        ['Парикмахерские услуги', 'Ламинирование ��олос', 'Восстановление и глянцевание волос', 90],
+        ['Парикмахерские услуги', 'Ламинирование волос', 'Восстановление и глянцевание волос', 90],
         ['Парикмахерские услуги', 'Кератин/ботокс', 'Глубокое восстановление структуры волос', 180],
         ['Парикмахерские услуги', 'Уходовые процедуры', 'Профессиональный уход за волосами', 60],
         
