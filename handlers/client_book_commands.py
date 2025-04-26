@@ -34,8 +34,9 @@ async def cmd_book(message: Message, state: FSMContext):
 @router.callback_query(BookingStates.select_category, F.data == "back_to_main")
 async def back_to_main_from_category(callback: CallbackQuery, state: FSMContext, user: dict):
     await state.clear()
-    has_subscription = callback.message.db_data.get("has_subscription", True) if hasattr(callback.message, "db_data") else True
-    await callback.message.answer("Главное меню:", reply_markup=await client_keyboards.get_main_menu_keyboard(user["role"], has_subscription))
+    has_subscription = callback.message.proxy_data.get("has_subscription", True) if hasattr(callback.message, "proxy_data") else True
+    await callback.message.edit_text("Главное меню:", 
+                                 reply_markup=await client_keyboards.get_main_menu_keyboard(user["role"], has_subscription))
     await callback.answer()
 
 @router.callback_query(BookingStates.select_category)
@@ -223,7 +224,11 @@ async def confirm(callback: CallbackQuery, state: FSMContext, user: dict):
     )
     
     if appointment:
-        has_subscription = callback.message.db_data.get("has_subscription", True) if hasattr(callback.message, "db_data") else True
+        has_subscription = True  # Default for clients
+        if user["role"] == "admin":
+            # Only check subscription for admins
+            has_subscription = callback.message.proxy_data.get("has_subscription", True) if hasattr(callback.message, "proxy_data") else True
+        
         await callback.message.edit_text("Запись успешно создана!", 
                                     reply_markup=await client_keyboards.get_main_menu_keyboard(user["role"], has_subscription))
     else:
@@ -236,17 +241,53 @@ async def confirm(callback: CallbackQuery, state: FSMContext, user: dict):
 async def cancel(callback: CallbackQuery, state: FSMContext, user: dict):
     await state.clear()
     await callback.message.edit_text("Запись отменена.")
-    has_subscription = callback.message.db_data.get("has_subscription", True) if hasattr(callback.message, "db_data") else True
+    
+    # Get subscription status for admins only
+    has_subscription = True  # Default for clients
+    if user["role"] == "admin":
+        has_subscription = callback.message.proxy_data.get("has_subscription", True) if hasattr(callback.message, "proxy_data") else True
+    
     await callback.message.answer("Главное меню:", 
                                reply_markup=await client_keyboards.get_main_menu_keyboard(user["role"], has_subscription))
     await callback.answer()
 
 @router.callback_query(F.data == "cancel_booking")
 async def cancel_booking(callback: CallbackQuery, state: FSMContext, user: dict):
-    # Fixed: removed reference to bot['temp_data']
+    # Fix: removed reference to bot['temp_data']
     await state.clear()
     await callback.message.edit_text("Запись отменена.")
-    has_subscription = callback.message.db_data.get("has_subscription", True) if hasattr(callback.message, "db_data") else True
+    
+    # Get subscription status for admins only
+    has_subscription = True  # Default for clients
+    if user["role"] == "admin":
+        has_subscription = callback.message.proxy_data.get("has_subscription", True) if hasattr(callback.message, "proxy_data") else True
+    
     await callback.message.answer("Главное меню:", 
                                reply_markup=await client_keyboards.get_main_menu_keyboard(user["role"], has_subscription))
+    await callback.answer()
+
+# Add handler for booking from main menu
+@router.callback_query(F.data == "book_service")
+async def book_service_cb(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("Выберите категорию услуг:", 
+                                reply_markup=await client_keyboards.get_categories_keyboard())
+    await state.set_state(BookingStates.select_category)
+    await callback.answer()
+
+# Add handler for viewing user's appointments
+@router.callback_query(F.data == "my_appointments")
+async def my_appointments(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    
+    # Get user's appointments
+    appointments = await appointment_commands.get_user_appointments(user_id)
+    
+    if appointments:
+        await callback.message.edit_text("Ваши записи:", 
+                                    reply_markup=await client_keyboards.get_appointments_keyboard(appointments))
+    else:
+        await callback.message.edit_text("У вас нет записей.", 
+                                    reply_markup=await client_keyboards.get_main_menu_keyboard())
+    
     await callback.answer()

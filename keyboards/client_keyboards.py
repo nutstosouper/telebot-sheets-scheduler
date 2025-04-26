@@ -81,3 +81,118 @@ async def get_main_menu_keyboard(user_role="client", has_subscription=True):
     buttons.append([InlineKeyboardButton(text="Помощь", callback_data="help")])
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+# Add the missing categories keyboard function
+async def get_categories_keyboard():
+    """Get categories keyboard"""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from utils.db_api import service_commands
+    
+    # Get all categories
+    categories = await service_commands.get_categories()
+    
+    # Create buttons for each category
+    buttons = []
+    for category in categories:
+        buttons.append([InlineKeyboardButton(
+            text=category.get('name', 'Unknown'), 
+            callback_data=category.get('name', 'unknown')
+        )])
+    
+    # Add back button
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+# Add other missing keyboard functions 
+async def get_services_keyboard(services):
+    """Get services keyboard"""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    
+    buttons = []
+    
+    # Add a button for each service
+    for service in services:
+        service_id = service.get('id')
+        service_name = service.get('name')
+        service_price = service.get('price', '0')
+        
+        button_text = f"{service_name} - {service_price} руб."
+        buttons.append([InlineKeyboardButton(text=button_text, callback_data=service_id)])
+    
+    # Add back button
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_categories")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+async def get_masters_keyboard(masters):
+    """Get masters keyboard"""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    
+    buttons = []
+    
+    # Add a button for each master
+    for master in masters:
+        master_id = master.get('id')
+        master_name = master.get('name')
+        
+        buttons.append([InlineKeyboardButton(text=master_name, callback_data=master_id)])
+    
+    # Add back button
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_services")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+async def get_times_keyboard(times):
+    """Get available times keyboard"""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    
+    buttons = []
+    
+    # Add a button for each time
+    for time in times:
+        buttons.append([InlineKeyboardButton(text=time, callback_data=time)])
+    
+    # Add back button
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_date")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+async def get_confirmation_keyboard():
+    """Get confirmation keyboard"""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    
+    buttons = [
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="cancel")]
+    ]
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+async def get_appointments_keyboard(appointments):
+    """Get appointments keyboard"""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    
+    buttons = []
+    
+    # Group appointments by date
+    appointments_by_date = {}
+    for appointment in appointments:
+        date = appointment.get('date')
+        if date not in appointments_by_date:
+            appointments_by_date[date] = []
+        appointments_by_date[date].append(appointment)
+    
+    # Sort dates
+    sorted_dates = sorted(appointments_by_date.keys())
+    
+    # Add a button for each date
+    for date in sorted_dates:
+        date_appointments = appointments_by_date[date]
+        button_text = f"{date} ({len(date_appointments)} записей)"
+        buttons.append([InlineKeyboardButton(text=button_text, callback_data=f"date_{date}")])
+    
+    # Add back button
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)

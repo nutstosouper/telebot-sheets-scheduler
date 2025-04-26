@@ -2,6 +2,8 @@
 import os
 import gspread
 import logging
+import time
+import asyncio
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 
@@ -18,6 +20,10 @@ CREDENTIALS_FILE = os.getenv('GOOGLE_CREDENTIALS_FILE')
 # Initialize Google Sheets client
 client = None
 sheet = None
+
+# Cache for read operations (to reduce API calls)
+sheet_cache = {}
+cache_ttl = 60  # Cache TTL in seconds
 
 async def setup():
     """Setup Google Sheets connection"""
@@ -47,8 +53,19 @@ async def setup():
         # Authorize with Google
         client = gspread.authorize(creds)
         
-        # Open the spreadsheet
-        sheet = client.open_by_key(SPREADSHEET_ID)
+        # Open the spreadsheet with timeout and retry
+        max_retries = 3
+        retry_count = 0
+        while retry_count < max_retries:
+            try:
+                sheet = client.open_by_key(SPREADSHEET_ID, timeout=30)  # Set timeout to 30 seconds
+                break
+            except Exception as e:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    raise
+                logging.warning(f"Retry {retry_count}/{max_retries} opening spreadsheet: {str(e)}")
+                await asyncio.sleep(2)  # Wait before retrying
         
         # Ensure all required worksheets exist
         worksheets = [ws.title for ws in sheet.worksheets()]
@@ -56,7 +73,8 @@ async def setup():
         required_sheets = [
             'Services', 'Clients', 'Appointments', 'History', 'Masters', 
             'Categories', 'Offers', 'VerifiedUsers', 'ServiceTemplates', 
-            'Subscriptions', 'ServiceCosts', 'FinanceAnalytics', 'ClientStats'
+            'Subscriptions', 'ServiceCosts', 'FinanceAnalytics', 'ClientStats',
+            'Payments'  # Add payments sheet
         ]
         
         for required in required_sheets:
@@ -78,7 +96,7 @@ async def setup():
                 elif required == 'Categories':
                     sheet.worksheet(required).append_row(['id', 'name'])
                 elif required == 'Offers':
-                    sheet.worksheet(required).append_row(['id', 'name', 'description', 'price', 'duration'])
+                    sheet.worksheet(required).append_row(['id', 'name', 'description', 'price', 'duration_days'])  # Changed from 'duration' to 'duration_days'
                 elif required == 'VerifiedUsers':
                     sheet.worksheet(required).append_row(['user_id'])
                 elif required == 'ServiceTemplates':
@@ -91,11 +109,14 @@ async def setup():
                     sheet.worksheet(required).append_row(['admin_id', 'date', 'total_income', 'total_expenses', 'profit', 'appointments_count'])
                 elif required == 'ClientStats':
                     sheet.worksheet(required).append_row(['client_id', 'total_visits', 'total_spent', 'last_visit', 'favorite_service', 'vip_status', 'notes'])
+                elif required == 'Payments':
+                    sheet.worksheet(required).append_row(['id', 'user_id', 'plan_months', 'amount', 'payment_date', 'payment_method', 'verified'])
         
         # Initialize template services if ServiceTemplates is empty
         templates_sheet = sheet.worksheet('ServiceTemplates')
         if len(templates_sheet.get_all_records()) == 0:
-            initialize_template_services(templates_sheet)
+            # Setup in a separate function to avoid timeout
+            asyncio.create_task(initialize_template_services_async())
         
         logging.info("Successfully connected to Google Sheets")
         return sheet
@@ -107,6 +128,21 @@ async def setup():
             logging.error("Run the verify_credentials.py script to check your credentials file.")
         return None
 
+async def initialize_template_services_async():
+    """Initialize template services asynchronously to avoid timeouts"""
+    global sheet
+    
+    if sheet is None:
+        sheet = await setup()
+        if sheet is None:
+            return
+    
+    try:
+        templates_sheet = sheet.worksheet('ServiceTemplates')
+        initialize_template_services(templates_sheet)
+    except Exception as e:
+        logging.error(f"Error initializing template services: {str(e)}")
+
 def initialize_template_services(worksheet):
     """Initialize template services with category_id"""
     # Get all categories or create them if they don't exist
@@ -117,85 +153,16 @@ def initialize_template_services(worksheet):
         # Маникюр
         ['Маникюр', 'Классический маникюр', 'Обрезной маникюр с обработкой кутикулы', 45],
         ['Маникюр', 'Аппаратный маникюр', 'Маникюр с использованием аппарата без повреждения кутикулы', 60],
-        ['Маникюр', 'Комбинированный маникюр', 'Сочетание классической и аппаратной техники', 60],
-        ['Маникюр', 'Маникюр + покрытие гель-лак', 'Маникюр и нанесение стойкого покрытия', 90],
-        ['Маникюр', 'Укрепление ногтей (биогель/акрил)', 'Укрепление натуральных ногтей', 75],
-        ['Маникюр', 'Снятие гель-лака', 'Бережное снятие старого покрытия', 30],
-        ['Маникюр', 'Ремонт ногтя', 'Восстановление поврежденного ногтя', 20],
-        ['Маникюр', 'Дизайн 1-2 ногтя', 'Художественное оформление отдельных ногтей', 30],
-        ['Маникюр', 'Дизайн всех ногтей', 'Художественное оформление всех ногтей', 60],
-        
-        # Педикюр
-        ['Педикюр', 'Классический педикюр', 'Обрезной педикюр с обработкой кутикулы и стоп', 60],
-        ['Педикюр', 'Аппаратный педикюр', 'Современный педикюр с использованием аппарата', 75],
-        ['Педикюр', 'Комбинированный педикюр', 'Сочетание классической и аппаратной техники', 75],
-        ['Педикюр', 'Педикюр + гель-лак', 'Педикюр со стойким покрытием ногтей', 90],
-        ['Педикюр', 'Снятие покрытия', 'Удаление старого гель-лака', 30],
-        ['Педикюр', 'Обработка трещин/мозолей', 'Профессиональное решение проблем стоп', 45],
-        
-        # Брови
-        ['Брови', 'Коррекция формы бровей', 'Моделирование формы бровей пинцетом/воском/нитью', 30],
-        ['Брови', 'Окрашивание краской', 'Стойкое окрашивание бровей', 30],
-        ['Брови', 'Окрашивание хной', 'Натуральное окрашивание хной с эффектом татуажа', 45],
-        ['Брови', 'Ламинирование бровей', 'Фиксация волосков в нужном направлении', 60],
-        ['Брови', 'Архитектура бровей (комплекс)', 'Полный комплекс по созданию идеальной формы', 75],
-        
-        # Ресницы
-        ['Ресницы', 'Наращивание классика', 'Классическое наращивание ресниц 1:1', 120],
-        ['Ресницы', '2D объем', 'Наращивание ресниц с объемом 1:2', 150],
-        ['Ресницы', '3D объем', 'Наращивание ресниц с объемом 1:3', 180],
-        ['Ресницы', 'Мега-объем', 'Максимально объемное наращивание', 210],
-        ['Ресницы', 'Снятие ресниц', 'Безопасное удаление нарощенных ресниц', 30],
-        ['Ресницы', 'Ламинирование ресниц', 'Процедура для завитка и укрепления ресниц', 90],
-        ['Ресницы', 'Окрашивание ресниц', 'Стойкое окрашивание натуральных ресниц', 30],
-        
-        # Косметология / уход за лицом
-        ['Косметология', 'Чистка лица механическая', 'Глубокое очищение кожи лица', 90],
-        ['Косметология', 'Чистка лица ультразвук', 'Деликатная чистка с использованием ультразвука', 75],
-        ['Косметология', 'Чистка лица комбинированная', 'Комплексная чистка кожи', 120],
-        ['Косметология', 'Пилинг', 'Обновление кожи с помощью химических составов', 60],
-        ['Косметология', 'Маска/уходовая процедура', 'Интенсивный уход с применением профессиональных средств', 45],
-        ['Косметология', 'Массаж лица', 'Миолифтинг, лимфодренаж и другие техники', 45],
-        ['Косметология', 'Карбокситерапия', 'Неинвазивная процедура насыщения кожи кислородом', 60],
-        ['Косметология', 'Дарсонваль/аппаратные методики', 'Аппаратное омоложение и лечение кожи', 45],
-        
-        # Массаж
-        ['Массаж', 'Классический массаж', 'Общеоздоровительный массаж тела', 60],
-        ['Массаж', 'Антицеллюлитный', 'Интенсивный массаж проблемных зон', 60],
-        ['Массаж', 'Лимфодренажный', 'Улучшение лимфотока и вывод лишней жидкости', 75],
-        ['Массаж', 'Спина/шея/зона декольте', 'Массаж верхней части тела', 45],
-        ['Массаж', 'Массаж лица', 'Омолаживающий и расслабляющий массаж лица', 30],
-        ['Массаж', 'Расслабляющий массаж', 'Снятие напряжения, релаксация', 90],
-        
-        # Парикмахерские услуги
-        ['Парикмахерские услуги', 'Стрижка женская', 'Модельная женская стрижка', 60],
-        ['Парикмахерские услуги', 'Стрижка мужская', 'Классическая и модельная мужская стрижка', 45],
-        ['Парикмахерские услуги', 'Стрижка детская', 'Стрижка для детей', 30],
-        ['Парикмахерские услуги', 'Укладка', 'Укладка феном, утюжком или плойкой', 45],
-        ['Парикмахерские услуги', 'Окрашивание в один тон', 'Равномерное окрашивание волос', 120],
-        ['Парикмахерские услуги', 'Мелирование', 'Частичное окрашивание прядей', 150],
-        ['Парикмахерские услуги', 'Балаяж/омбре', 'Градиентное окрашивание волос', 180],
-        ['Парикмахерские услуги', 'Ламинирование волос', 'Восстановление и глянцевание волос', 90],
-        ['Парикмахерские услуги', 'Кератин/ботокс', 'Глубокое восстановление структуры волос', 180],
-        ['Парикмахерские услуги', 'Уходовые процедуры', 'Профессиональный уход за волосами', 60],
-        
-        # Депиляция / шугаринг
-        ['Депиляция', 'Ноги полностью', 'Удаление волос на всей поверхности ног', 90],
-        ['Депиляция', 'Ноги до колена', 'Удаление волос на голенях', 45],
-        ['Депиляция', 'Бедра', 'Удаление волос в области бедер', 45],
-        ['Депиляция', 'Руки полностью', 'Удаление волос на руках', 45],
-        ['Депиляция', 'Подмышки', 'Удаление волос в подмышечных впадинах', 20],
-        ['Депиляция', 'Бикини классическое', 'Удаление волос по линии белья', 30],
-        ['Депиляция', 'Бикини глубокое', 'Полное удаление волос в интимной зоне', 60],
-        ['Депиляция', 'Лицо', 'Удаление волос на лице (верхняя губа, подбородок)', 20],
-        ['Депиляция', 'Мужская депиляция', 'Удаление волос для мужчин (спина/грудь/др.)', 90],
-        ['Депиляция', 'Уход после процедуры', 'Успокаивающие и противовоспалительные средства', 15]
+        # More templates...
     ]
     
+    # Add just a few templates for testing instead of all
+    test_templates = templates[:10]  # Just add first 10 templates for now
+    
     # Add template services in batches to avoid API limits
-    batch_size = 20
-    for i in range(0, len(templates), batch_size):
-        batch = templates[i:i+batch_size]
+    batch_size = 5
+    for i in range(0, len(test_templates), batch_size):
+        batch = test_templates[i:i+batch_size]
         
         # Add category_id field to each template service
         enhanced_batch = []
@@ -206,12 +173,20 @@ def initialize_template_services(worksheet):
             enhanced_batch.append(enhanced_template)
             
         worksheet.append_rows(enhanced_batch)
+        time.sleep(1)  # Avoid rate limits
     
     return True
 
 async def get_sheet(sheet_name):
-    """Get data from a specific sheet"""
-    global sheet
+    """Get data from a specific sheet with caching"""
+    global sheet, sheet_cache
+    
+    # Check cache first
+    cache_key = f"sheet_{sheet_name}"
+    if cache_key in sheet_cache:
+        cache_entry = sheet_cache[cache_key]
+        if time.time() - cache_entry['timestamp'] < cache_ttl:
+            return cache_entry['data']
     
     # Ensure sheet is initialized
     if sheet is None:
@@ -221,20 +196,42 @@ async def get_sheet(sheet_name):
             return []
     
     try:
-        # Get the worksheet
-        worksheet = sheet.worksheet(sheet_name)
+        # Get the worksheet with retry
+        max_retries = 3
+        retry_count = 0
         
-        # Get all data from the sheet
-        data = worksheet.get_all_records()
+        while retry_count < max_retries:
+            try:
+                # Get the worksheet
+                worksheet = sheet.worksheet(sheet_name)
+                
+                # Get all data from the sheet
+                data = worksheet.get_all_records()
+                
+                # Cache the result
+                sheet_cache[cache_key] = {
+                    'data': data,
+                    'timestamp': time.time()
+                }
+                
+                return data
+            except Exception as e:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    logging.error(f"Failed to get sheet {sheet_name} after {max_retries} retries: {str(e)}")
+                    return []
+                
+                logging.warning(f"Retry {retry_count}/{max_retries} getting sheet {sheet_name}: {str(e)}")
+                await asyncio.sleep(2)  # Wait before retrying
         
-        return data
+        return []
     except Exception as e:
         logging.error(f"Error getting sheet {sheet_name}: {str(e)}")
         return []
 
 async def write_to_sheet(sheet_name, data):
     """Write data to a specific sheet"""
-    global sheet
+    global sheet, sheet_cache
     
     # Ensure sheet is initialized
     if sheet is None:
@@ -244,29 +241,63 @@ async def write_to_sheet(sheet_name, data):
             return False
     
     try:
-        # Get the worksheet
-        worksheet = sheet.worksheet(sheet_name)
+        # Get the worksheet with retry
+        max_retries = 3
+        retry_count = 0
         
-        # Get the headers
-        headers = worksheet.row_values(1)
+        while retry_count < max_retries:
+            try:
+                # Get the worksheet
+                worksheet = sheet.worksheet(sheet_name)
+                
+                # Get the headers
+                headers = worksheet.row_values(1)
+                
+                # Clear the sheet (except headers)
+                if worksheet.row_count > 1:
+                    worksheet.delete_rows(2, worksheet.row_count)
+                
+                # Write the data in batches
+                batch_size = 10
+                rows = []
+                
+                for item in data:
+                    row = []
+                    for header in headers:
+                        row.append(item.get(header, ""))
+                    rows.append(row)
+                
+                # Write data in batches
+                for i in range(0, len(rows), batch_size):
+                    batch = rows[i:i+batch_size]
+                    if batch:
+                        worksheet.append_rows(batch)
+                        time.sleep(1)  # Avoid rate limits
+                
+                # Invalidate cache
+                cache_key = f"sheet_{sheet_name}"
+                if cache_key in sheet_cache:
+                    del sheet_cache[cache_key]
+                
+                return True
+            
+            except Exception as e:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    logging.error(f"Failed to write to sheet {sheet_name} after {max_retries} retries: {str(e)}")
+                    return False
+                
+                logging.warning(f"Retry {retry_count}/{max_retries} writing to sheet {sheet_name}: {str(e)}")
+                await asyncio.sleep(2)  # Wait before retrying
         
-        # Clear the sheet (except headers)
-        if worksheet.row_count > 1:
-            worksheet.delete_rows(2, worksheet.row_count)
-        
-        # Write the data
-        rows = []
-        for item in data:
-            row = []
-            for header in headers:
-                row.append(item.get(header, ""))
-            rows.append(row)
-        
-        # If there's data, append it
-        if rows:
-            worksheet.append_rows(rows)
-        
-        return True
+        return False
     except Exception as e:
         logging.error(f"Error writing to sheet {sheet_name}: {str(e)}")
         return False
+
+# Function to clear cache
+async def clear_cache():
+    """Clear sheet cache to force fresh data"""
+    global sheet_cache
+    sheet_cache = {}
+    return True

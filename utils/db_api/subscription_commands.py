@@ -2,8 +2,9 @@
 from utils.db_api.google_sheets import get_sheet, write_to_sheet
 from datetime import datetime, timedelta
 
-# Sheet name for subscriptions
+# Sheet names for subscriptions and payments
 SUBSCRIPTIONS_SHEET = "Subscriptions"
+PAYMENTS_SHEET = "Payments"  # New sheet for payment validation
 
 async def get_subscription(user_id):
     """Get subscription for a specific user"""
@@ -127,7 +128,7 @@ async def check_subscription_status(user_id):
             'active': False,
             'days_left': 0,
             'trial': False,
-            'message': 'Ошибка при проверке подписки'
+            'message': f'Ошибка при проверке подписки: {str(e)}'
         }
 
 async def create_trial(user_id, days=7):
@@ -146,3 +147,73 @@ async def is_admin_subscribed(user_id):
     """Check if an admin has an active subscription"""
     status = await check_subscription_status(user_id)
     return status['active']
+
+# New functions for payment validation
+async def record_payment(user_id, plan_months, amount, payment_method="manual"):
+    """Record a subscription payment"""
+    # Initialize payments sheet if not exists
+    payments = await get_sheet(PAYMENTS_SHEET)
+    
+    payment_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    payment_id = str(len(payments) + 1)
+    
+    new_payment = {
+        'id': payment_id,
+        'user_id': str(user_id),
+        'plan_months': plan_months,
+        'amount': amount,
+        'payment_date': payment_date,
+        'payment_method': payment_method,
+        'verified': 'no'  # Default to unverified
+    }
+    
+    payments.append(new_payment)
+    await write_to_sheet(PAYMENTS_SHEET, payments)
+    
+    return new_payment
+
+async def verify_payment(payment_id):
+    """Verify a payment and activate subscription"""
+    payments = await get_sheet(PAYMENTS_SHEET)
+    verified = False
+    user_id = None
+    plan_months = 0
+    
+    for i, payment in enumerate(payments):
+        if payment.get('id') == payment_id:
+            payments[i]['verified'] = 'yes'
+            verified = True
+            user_id = payment.get('user_id')
+            plan_months = int(payment.get('plan_months', 1))
+            break
+    
+    if verified and user_id:
+        await write_to_sheet(PAYMENTS_SHEET, payments)
+        # Convert months to days
+        days = plan_months * 30
+        # Extend subscription
+        return await extend_subscription(user_id, days)
+    
+    return None
+
+async def get_user_payments(user_id):
+    """Get all payments for a user"""
+    payments = await get_sheet(PAYMENTS_SHEET)
+    user_payments = []
+    
+    for payment in payments:
+        if str(payment.get('user_id')) == str(user_id):
+            user_payments.append(payment)
+    
+    return user_payments
+
+async def check_payment_verified(user_id, plan_months=None):
+    """Check if user has a verified payment for the specified plan"""
+    payments = await get_user_payments(user_id)
+    
+    for payment in payments:
+        if payment.get('verified') == 'yes':
+            if plan_months is None or int(payment.get('plan_months', 0)) == plan_months:
+                return True
+    
+    return False

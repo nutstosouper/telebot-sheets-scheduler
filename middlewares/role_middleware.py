@@ -52,15 +52,34 @@ class RoleMiddleware(BaseMiddleware):
             }
         
         # Check subscription status if user is an admin
+        has_subscription = True  # Default value for clients
+        
         if user["role"] == "admin":
-            subscription_status = await subscription_commands.check_subscription_status(user_id)
-            data["has_subscription"] = subscription_status["active"]
-        else:
-            data["has_subscription"] = True  # Clients don't need subscription
-            
+            try:
+                subscription_status = await subscription_commands.check_subscription_status(user_id)
+                has_subscription = subscription_status["active"]
+            except Exception as e:
+                print(f"Error checking subscription: {e}")
+                has_subscription = False  # Default to False on error for admins
+        
         # Add user data to middleware data for handlers to access
         data["user"] = user
         data["role"] = user["role"]
+        data["has_subscription"] = has_subscription
+        
+        # Store subscription data in event object for access in callbacks
+        if isinstance(event, Message):
+            # Store in Message object
+            if not hasattr(event, "proxy_data"):
+                event.proxy_data = {}
+            event.proxy_data["has_subscription"] = has_subscription
+            event.proxy_data["role"] = user["role"]
+        elif isinstance(event, CallbackQuery) and event.message:
+            # Store in CallbackQuery.message object
+            if not hasattr(event.message, "proxy_data"):
+                event.message.proxy_data = {}
+            event.message.proxy_data["has_subscription"] = has_subscription
+            event.message.proxy_data["role"] = user["role"]
         
         # Call the handler with the updated data
         return await handler(event, data)
