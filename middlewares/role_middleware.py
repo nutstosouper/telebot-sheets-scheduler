@@ -3,6 +3,7 @@ from typing import Dict, Any, Callable, Awaitable
 from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery
 from utils.db_api import user_commands
+from utils.db_api import subscription_commands
 
 class RoleMiddleware(BaseMiddleware):
     """
@@ -37,7 +38,7 @@ class RoleMiddleware(BaseMiddleware):
                 user_id=user_id,
                 full_name=full_name,
                 username=username,
-                role="client"
+                role="client"  # Default role is client
             )
         
         # If we still couldn't get or create the user (due to sheet issues),
@@ -49,6 +50,13 @@ class RoleMiddleware(BaseMiddleware):
                 'full_name': full_name or '',
                 'role': 'client'  # Default role
             }
+        
+        # Check subscription status if user is an admin
+        if user["role"] == "admin":
+            subscription_status = await subscription_commands.check_subscription_status(user_id)
+            data["has_subscription"] = subscription_status["active"]
+        else:
+            data["has_subscription"] = True  # Clients don't need subscription
             
         # Add user data to middleware data for handlers to access
         data["user"] = user

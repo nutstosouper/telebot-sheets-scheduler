@@ -1,3 +1,4 @@
+
 from aiogram import F, Router, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
@@ -9,9 +10,6 @@ import logging
 # Import utils and keyboards
 from utils.db_api import service_commands, appointment_commands, master_commands
 from keyboards import client_keyboards
-
-# Temporary data storage (use this instead of bot['temp_data'])
-temp_user_data = {}
 
 router = Router()
 
@@ -34,9 +32,10 @@ async def cmd_book(message: Message, state: FSMContext):
 
 # Category selection
 @router.callback_query(BookingStates.select_category, F.data == "back_to_main")
-async def back_to_main_from_category(callback: CallbackQuery, state: FSMContext):
+async def back_to_main_from_category(callback: CallbackQuery, state: FSMContext, user: dict):
     await state.clear()
-    await callback.message.answer("Главное меню:", reply_markup=await client_keyboards.get_main_menu_keyboard())
+    has_subscription = callback.message.db_data.get("has_subscription", True) if hasattr(callback.message, "db_data") else True
+    await callback.message.answer("Главное меню:", reply_markup=await client_keyboards.get_main_menu_keyboard(user["role"], has_subscription))
     await callback.answer()
 
 @router.callback_query(BookingStates.select_category)
@@ -50,11 +49,11 @@ async def select_category(callback: CallbackQuery, state: FSMContext):
     services = await service_commands.get_services_by_category_name(category_name)
     
     if services:
-        await callback.message.answer("Выберите услугу:", 
+        await callback.message.edit_text("Выберите услугу:", 
                                     reply_markup=await client_keyboards.get_services_keyboard(services))
         await state.set_state(BookingStates.select_service)
     else:
-        await callback.message.answer("В данной категории нет услуг.")
+        await callback.message.edit_text("В данной категории нет услуг.")
         await state.set_state(BookingStates.select_category)
     
     await callback.answer()
@@ -62,7 +61,7 @@ async def select_category(callback: CallbackQuery, state: FSMContext):
 # Service selection
 @router.callback_query(BookingStates.select_service, F.data == "back_to_categories")
 async def back_to_categories(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("Выберите категорию услуг:", 
+    await callback.message.edit_text("Выберите категорию услуг:", 
                                 reply_markup=await client_keyboards.get_categories_keyboard())
     await state.set_state(BookingStates.select_category)
     await callback.answer()
@@ -82,14 +81,14 @@ async def select_service(callback: CallbackQuery, state: FSMContext):
         masters = await master_commands.get_masters()
         
         if masters:
-            await callback.message.answer("Выберите мастера:", 
+            await callback.message.edit_text("Выберите мастера:", 
                                         reply_markup=await client_keyboards.get_masters_keyboard(masters))
             await state.set_state(BookingStates.select_master)
         else:
-            await callback.message.answer("Нет доступных мастеров для данной услуги.")
+            await callback.message.edit_text("Нет доступных мастеров для данной услуги.")
             await state.set_state(BookingStates.select_service)
     else:
-        await callback.message.answer("Услуга не найдена.")
+        await callback.message.edit_text("Услуга не найдена.")
         await state.set_state(BookingStates.select_service)
     
     await callback.answer()
@@ -104,12 +103,12 @@ async def back_to_services(callback: CallbackQuery, state: FSMContext):
     # If a category was previously selected, show services for that category
     if selected_category:
         services = await service_commands.get_services_by_category_name(selected_category)
-        await callback.message.answer("Выберите услугу:", 
+        await callback.message.edit_text("Выберите услугу:", 
                                     reply_markup=await client_keyboards.get_services_keyboard(services))
         await state.set_state(BookingStates.select_service)
     else:
         # If no category was selected, go back to the category selection
-        await callback.message.answer("Выберите категорию услуг:", 
+        await callback.message.edit_text("Выберите категорию услуг:", 
                                     reply_markup=await client_keyboards.get_categories_keyboard())
         await state.set_state(BookingStates.select_category)
     
@@ -123,7 +122,7 @@ async def select_master(callback: CallbackQuery, state: FSMContext):
     await state.update_data(selected_master_id=master_id)
     
     # Ask for the desired date
-    await callback.message.answer("Выберите желаемую дату (ГГГГ-ММ-ДД):")
+    await callback.message.edit_text("Выберите желаемую дату (ГГГГ-ММ-ДД):")
     await state.set_state(BookingStates.select_date)
     
     await callback.answer()
@@ -161,7 +160,7 @@ async def select_date(message: Message, state: FSMContext):
 # Time selection
 @router.callback_query(BookingStates.select_time, F.data == "back_to_date")
 async def back_to_date(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("Выберите желаемую дату (ГГГГ-ММ-ДД):")
+    await callback.message.edit_text("Выберите желаемую дату (ГГГГ-ММ-ДД):")
     await state.set_state(BookingStates.select_date)
     await callback.answer()
 
@@ -193,11 +192,11 @@ async def select_time(callback: CallbackQuery, state: FSMContext):
             f"Дата: {date}\n"
             f"Время: {time}"
         )
-        await callback.message.answer(confirmation_text, 
+        await callback.message.edit_text(confirmation_text, 
                                     reply_markup=await client_keyboards.get_confirmation_keyboard())
         await state.set_state(BookingStates.confirm_booking)
     else:
-        await callback.message.answer("Ошибка: Услуга или мастер не найдены. Пожалуйста, начните заново.")
+        await callback.message.edit_text("Ошибка: Услуга или мастер не найдены. Пожалуйста, начните заново.")
         await state.clear()
         await state.set_state(BookingStates.select_category)
     
@@ -205,7 +204,7 @@ async def select_time(callback: CallbackQuery, state: FSMContext):
 
 # Confirmation
 @router.callback_query(BookingStates.confirm_booking, F.data == "confirm")
-async def confirm(callback: CallbackQuery, state: FSMContext):
+async def confirm(callback: CallbackQuery, state: FSMContext, user: dict):
     # Get data from state
     data = await state.get_data()
     user_id = callback.from_user.id
@@ -224,33 +223,30 @@ async def confirm(callback: CallbackQuery, state: FSMContext):
     )
     
     if appointment:
-        await callback.message.answer("Запись успешно создана!", 
-                                    reply_markup=await client_keyboards.get_main_menu_keyboard())
+        has_subscription = callback.message.db_data.get("has_subscription", True) if hasattr(callback.message, "db_data") else True
+        await callback.message.edit_text("Запись успешно создана!", 
+                                    reply_markup=await client_keyboards.get_main_menu_keyboard(user["role"], has_subscription))
     else:
-        await callback.message.answer("Ошибка при создании записи. Пожалуйста, попробуйте еще раз.")
+        await callback.message.edit_text("Ошибка при создании записи. Пожалуйста, попробуйте еще раз.")
     
     await state.clear()
     await callback.answer()
 
 @router.callback_query(BookingStates.confirm_booking, F.data == "cancel")
-async def cancel(callback: CallbackQuery, state: FSMContext):
+async def cancel(callback: CallbackQuery, state: FSMContext, user: dict):
     await state.clear()
-    await callback.message.answer("Запись отменена.")
+    await callback.message.edit_text("Запись отменена.")
+    has_subscription = callback.message.db_data.get("has_subscription", True) if hasattr(callback.message, "db_data") else True
     await callback.message.answer("Главное меню:", 
-                               reply_markup=await client_keyboards.get_main_menu_keyboard())
+                               reply_markup=await client_keyboards.get_main_menu_keyboard(user["role"], has_subscription))
     await callback.answer()
 
 @router.callback_query(F.data == "cancel_booking")
-async def cancel_booking(callback: CallbackQuery, state: FSMContext):
-    # Use temp_user_data dictionary instead of bot['temp_data']
-    user_id = callback.from_user.id
-    if user_id in temp_user_data:
-        del temp_user_data[user_id]
-    
+async def cancel_booking(callback: CallbackQuery, state: FSMContext, user: dict):
+    # Fixed: removed reference to bot['temp_data']
     await state.clear()
-    await callback.message.answer("Запись отменена.")
+    await callback.message.edit_text("Запись отменена.")
+    has_subscription = callback.message.db_data.get("has_subscription", True) if hasattr(callback.message, "db_data") else True
     await callback.message.answer("Главное меню:", 
-                               reply_markup=await client_keyboards.get_main_menu_keyboard())
+                               reply_markup=await client_keyboards.get_main_menu_keyboard(user["role"], has_subscription))
     await callback.answer()
-
-# Make sure to replace all other instances of bot['temp_data'] with our temp_user_data dictionary

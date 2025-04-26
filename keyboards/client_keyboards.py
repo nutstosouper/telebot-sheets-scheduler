@@ -61,31 +61,23 @@ async def get_subscription_confirm_keyboard():
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-# Make sure to update the main menu keyboard to include a subscription button
-async def get_main_menu_keyboard():
+# Make sure to update the main menu keyboard to include a subscription button only for admins
+async def get_main_menu_keyboard(user_role="client", has_subscription=True):
     """Get main menu keyboard"""
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    from utils.db_api import user_commands
     
     buttons = [
         [InlineKeyboardButton(text="Записаться", callback_data="book_service")],
         [InlineKeyboardButton(text="Мои записи", callback_data="my_appointments")]
     ]
     
-    # Проверяем роль пользователя, чтобы добавить соответствующие кнопки
-    try:
-        user_id = None
-        # Этот код будет заменен на получение user_id из контекста
-        # Для работы этой функции предполагается, что user_id передается при вызове
+    # Добавляем кнопки для админа
+    if user_role == "admin":
+        if has_subscription:
+            buttons.append([InlineKeyboardButton(text="📊 Финансы и аналитика", callback_data="finance_menu")])
         
-        if user_id:
-            user = await user_commands.get_user(user_id)
-            if user and user.get("role") == "admin":
-                buttons.append([InlineKeyboardButton(text="📊 Финансы и аналитика", callback_data="finance_menu")])
-                buttons.append([InlineKeyboardButton(text="📱 Подписка", callback_data="subscription_menu")])
-    except:
-        pass
-        
+        buttons.append([InlineKeyboardButton(text="📱 Подписка", callback_data="subscription_menu")])
+    
     buttons.append([InlineKeyboardButton(text="Помощь", callback_data="help")])
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)

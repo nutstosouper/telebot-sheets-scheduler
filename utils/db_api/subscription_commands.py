@@ -17,7 +17,7 @@ async def get_subscription(user_id):
     return None
 
 async def create_subscription(user_id, days=30, trial=False, referrer_id=None):
-    """Create a new subscription for a user"""
+    """Create a new subscription for a user (admin only)"""
     subscriptions = await get_sheet(SUBSCRIPTIONS_SHEET)
     
     # Check if subscription already exists
@@ -86,7 +86,7 @@ async def extend_subscription(user_id, days):
     return await create_subscription(user_id, days)
 
 async def check_subscription_status(user_id):
-    """Check if a user has an active subscription"""
+    """Check if an admin has an active subscription"""
     subscription = await get_subscription(user_id)
     
     if not subscription:
@@ -131,7 +131,7 @@ async def check_subscription_status(user_id):
         }
 
 async def create_trial(user_id, days=7):
-    """Create a trial subscription for a user"""
+    """Create a trial subscription for an admin"""
     return await create_subscription(user_id, days, trial=True)
 
 async def process_referral(referrer_id):

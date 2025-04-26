@@ -13,11 +13,11 @@ def register_handlers(dp: Dispatcher):
     from .client_book_commands import router as book_router
     dp.include_router(book_router)
     
-    # Register subscription router
+    # Register subscription router - ONLY FOR ADMINS
     from .client_subscription_commands import router as subscription_router
     dp.include_router(subscription_router)
     
-    # Register finance router
+    # Register finance router - ONLY FOR ADMINS
     from .client_finance_commands import router as finance_router
     dp.include_router(finance_router)
     
